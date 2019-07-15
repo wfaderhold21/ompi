@@ -103,6 +103,11 @@ static int _dereg_segment(map_segment_t *s)
     return rc;
 }
 
+int register_sharp(map_segment_t *s, int *num_btl)
+{
+    return _reg_segment(s, num_btl);
+}   
+
 static int _reg_segment(map_segment_t *s, int *num_btl)
 {
     int rc = OSHMEM_SUCCESS;

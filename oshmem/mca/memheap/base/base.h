@@ -162,6 +162,7 @@ extern mca_memheap_map_t* memheap_map;
 
 static inline int map_segment_is_va_in(map_base_segment_t *s, void *va)
 {
+//    printf("[debug] s->base: %p\n", s->va_base);
     return (va >= s->va_base && va < s->va_end);
 }
 
@@ -206,9 +207,14 @@ static inline map_base_segment_t *map_segment_find_va(map_base_segment_t *segs,
     int i;
 
     for (i = 0; i < MCA_MEMHEAP_MAX_SEGMENTS; i++) {
+//        rseg = &segs[i];
         rseg = (map_base_segment_t *)((char *)segs + elem_size * i);
+        printf("[debug] rseg: %p, va: %p\n", rseg, va);
         if (OPAL_LIKELY(map_segment_is_va_in(rseg, va))) {
+            printf("found %p!\n", va);
             return rseg;
+        } else {
+            printf("failed to find %p in %p - %p\n", va, rseg->va_base, rseg->va_end);
         }
     }
 

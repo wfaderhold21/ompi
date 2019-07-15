@@ -770,6 +770,7 @@ int mca_spml_ucx_put(shmem_ctx_t ctx, void* dst_addr, size_t size, void* src_add
 #endif
 
     ucx_mkey = mca_spml_ucx_get_mkey(ctx, dst, dst_addr, &rva, &mca_spml_ucx);
+    printf("[debug:put] %p -> %p, mkey: %p\n", src_addr, dst_addr, ucx_mkey);
 #if HAVE_DECL_UCP_PUT_NB
     request = ucp_put_nb(ucx_ctx->ucp_peers[dst].ucp_conn, src_addr, size,
                          (uint64_t)rva, ucx_mkey->rkey, opal_common_ucx_empty_complete_cb);
@@ -778,6 +779,7 @@ int mca_spml_ucx_put(shmem_ctx_t ctx, void* dst_addr, size_t size, void* src_add
     status = ucp_put(ucx_ctx->ucp_peers[dst].ucp_conn, src_addr, size,
                      (uint64_t)rva, ucx_mkey->rkey);
     res = ucx_status_to_oshmem(status);
+    printf("[debug:put] result %d\n", res);
 #endif
 
     if (OPAL_LIKELY(OSHMEM_SUCCESS == res)) {

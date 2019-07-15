@@ -210,6 +210,7 @@ mca_spml_ucx_get_mkey(shmem_ctx_t ctx, int pe, void *va, void **rva, mca_spml_uc
     mkey = (spml_ucx_cached_mkey_t *)map_segment_find_va(&mkey->super.super, sizeof(*mkey), va);
     assert(mkey != NULL);
     *rva = map_segment_va2rva(&mkey->super, va);
+    printf("[debug:mkey] %p\n", *rva);
     return &mkey->key;
 }
 
