@@ -135,10 +135,8 @@ static memheap_context_t* _memheap_create(void)
 
    /* Initialize SharP Area */
     size = 1;
-    printf("calling alloc_init with hint: %d\n", SHMEM_HINT_NEAR_NIC_MEM);
     rc = mca_memheap_base_alloc_init(&mca_memheap_base_map, size,
                                      SHMEM_HINT_NEAR_NIC_MEM);
-    printf("\trc: %d\n", rc);
     if (rc == OSHMEM_ERR_NOT_IMPLEMENTED) {
         /* do not treat NOT_IMPLEMENTED as error */
         rc = OSHMEM_SUCCESS;

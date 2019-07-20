@@ -97,7 +97,6 @@ int mca_memheap_base_alloc_init(mca_memheap_map_t *map, size_t size, long hint)
         // create a new memsegment
         int nr_segs = map->n_segments;
         map_segment_t * mysegment = &map->mem_segs[nr_segs];
-        printf("ADDED mysegment: %p , %d\n", mysegment, nr_segs); 
         
         // alloc space with sharp
         /* do we have a method to alloc memory on the nic? */
@@ -115,15 +114,15 @@ int mca_memheap_base_alloc_init(mca_memheap_map_t *map, size_t size, long hint)
         info_obj.allocator_constraints = 0;
 
         a_obj = sharp_init_allocator_obj(&info_obj);
-        mysegment->super.va_base = sharp_allocator_alloc(a_obj, 64 * (1<<20));
-        mysegment->seg_size = 64 * (1<<20);
+        mysegment->super.va_base = sharp_allocator_alloc(a_obj, 1000000000);
+        mysegment->seg_size = 1000000000;
         mysegment->super.va_end = mysegment->super.va_base + mysegment->seg_size;
         //mysegment->ctx = a_obj;
         mysegment->type = MAP_SEGMENT_ALLOC_SHARP;
         mysegment->alloc_hints = hint;
     //    mysegment->seg_id = map->n_segments;
         mysegment->alloc_hints = hint;
-        mspace area = create_mspace_with_base(mysegment->super.va_base, 64 * (1<<20), 0);
+        mspace area = create_mspace_with_base(mysegment->super.va_base, 1000000000, 0);
         struct sharp_ctx * sctx = calloc(1, sizeof(struct sharp_ctx));
         sctx->a_obj = a_obj;
         sctx->area = area;
@@ -181,55 +180,6 @@ int mca_memheap_alloc_with_hint(size_t size, long hint, void** ptr)
         }
     }
 
-//    if (hint == 0) {
     return MCA_MEMHEAP_CALL(alloc(size, ptr));
-    /*} else {
-        sharp_allocator_info_params_t info_obj;
-        sharp_hint_t sharp_hints = 0;
-        sharp_allocator_obj_t * a_obj;
 
-        if(!is_initialized) {
-            sharp_init();
-        }
-
-        // create a new memsegment
-        int nr_segs = mca_memheap_base_map.n_segments;
-        map_segment_t * mysegment = &mca_memheap_base_map.mem_segs[nr_segs];
-        printf("ADDED mysegment: %p , %d\n", mysegment, nr_segs); 
-        
-        // alloc space with sharp
-        * do we have a method to alloc memory on the nic? *
-        if (hint == SHMEM_HINT_NONE) {
-            return MCA_MEMHEAP_CALL(alloc(size, ptr));
-        }
-
-        if (hint == SHMEM_HINT_DEVICE_GPU_MEM || hint == SHMEM_HINT_HIGH_BW_MEM) {
-            sharp_hints |= SHARP_HINT_GPU;
-        } else if (hint == SHMEM_HINT_LOW_LAT_MEM) {
-            sharp_hints |= SHARP_HINT_CPU;
-        }
-
-        if (hint == SHMEM_HINT_NEAR_NIC_MEM) {
-            sharp_hints |= SHARP_HINT_LATENCY_OPT;
-        }
-
-        info_obj.allocator_hints = sharp_hints;
-        info_obj.allocator_constraints = 0;
-
-        a_obj = sharp_init_allocator_obj(&info_obj);
-        mysegment->super.va_base = sharp_allocator_alloc(a_obj, 64 * (1<<20));
-        mysegment->seg_size = 64 * (1<<20);
-        mysegment->super.va_end = mysegment->super.va_base + mysegment->seg_size;
-        //mysegment->ctx = a_obj;
-        mysegment->type = MAP_SEGMENT_ALLOC_SHARP;
-        mysegment->alloc_hints = hint;
-        mysegment->seg_id = mca_memheap_base_map.n_segments;
-        mca_memheap_base_map.n_segments++;
-        *ptr = mysegment->super.va_base;
-//        int num_btl = mca_memheap_base_map.num_transports;
-        register_sharp(mysegment, &mca_memheap_base_map.num_transports);
-
-        printf("mysegment->mkey
-        // add that segment to the mca_memheap_base_map.mem_segs
-    } */
 }
