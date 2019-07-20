@@ -1,0 +1,3 @@
+Configure line:
+
+./configure --prefix=/home/cc/install.shmem-full/ --enable-mpirun-prefix-by-default --with-ucx=/home/cc/install.shmem-full/ CFLAGS=-I/home/cc/install.sharp/include LDFLAGS=-L/home/cc/install.sharp/lib -lsharp -lmemkind -lpmem -lvmem
