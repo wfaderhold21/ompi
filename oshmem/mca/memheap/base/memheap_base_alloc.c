@@ -88,6 +88,7 @@ int mca_memheap_base_alloc_init(mca_memheap_map_t *map, size_t size, long hint)
     } else {
         sharp_allocator_info_params_t info_obj;
         sharp_hint_t sharp_hints = 0;
+        sharp_constraint_t sharp_constraints;
         sharp_allocator_obj_t * a_obj;
 
         if(!is_initialized) {
@@ -102,34 +103,40 @@ int mca_memheap_base_alloc_init(mca_memheap_map_t *map, size_t size, long hint)
         /* do we have a method to alloc memory on the nic? */
         if (hint == SHMEM_HINT_DEVICE_GPU_MEM || hint == SHMEM_HINT_HIGH_BW_MEM) {
             sharp_hints |= SHARP_HINT_GPU;
+            sharp_constraints |= SHARP_ACCESS_INTRAP;
         } else if (hint == SHMEM_HINT_LOW_LAT_MEM) {
             sharp_hints |= SHARP_HINT_CPU;
+            sharp_constraints |= SHARP_ACCESS_INTERP;
         }
 
         if (hint == SHMEM_HINT_NEAR_NIC_MEM) {
             sharp_hints |= SHARP_HINT_LATENCY_OPT;
+            sharp_constraints |= SHARP_ACCESS_INTERP;
+        }
+
+        if (hint == SHMEM_HINT_NUMA_0) {
+            sharp_constraints |= SHARP_CONSTRAINT_NUMA_0;
+        } else if (hint == SHMEM_HINT_NUMA_1) {
+            sharp_constraints |= SHARP_CONSTRAINT_NUMA_1;
         }
 
         info_obj.allocator_hints = sharp_hints;
-        info_obj.allocator_constraints = 0;
+        info_obj.allocator_constraints = sharp_constraints;
 
         a_obj = sharp_init_allocator_obj(&info_obj);
-        mysegment->super.va_base = sharp_allocator_alloc(a_obj, 1000000000);
-        mysegment->seg_size = 1000000000;
+
+        mysegment->super.va_base = sharp_allocator_alloc(a_obj, 1024 * (1024 * 1024));
+        mysegment->seg_size = 1024 * (1024 * 1024);
         mysegment->super.va_end = mysegment->super.va_base + mysegment->seg_size;
-        //mysegment->ctx = a_obj;
         mysegment->type = MAP_SEGMENT_ALLOC_SHARP;
         mysegment->alloc_hints = hint;
-    //    mysegment->seg_id = map->n_segments;
-        mysegment->alloc_hints = hint;
-        mspace area = create_mspace_with_base(mysegment->super.va_base, 1000000000, 0);
+        mspace area = create_mspace_with_base(mysegment->super.va_base,1024 * (1024 * 1024), 0);
         struct sharp_ctx * sctx = calloc(1, sizeof(struct sharp_ctx));
         sctx->a_obj = a_obj;
         sctx->area = area;
         mysegment->context = sctx;
         mysegment->allocator = &sharp_allocator;
         map->n_segments++;
-        //*ptr = mysegment->super.va_base;
     }
 
 

@@ -25,6 +25,8 @@ enum {
     SHMEM_HINT_NEAR_NIC_MEM   = 1 << 2,
     SHMEM_HINT_DEVICE_GPU_MEM = 1 << 3,
     SHMEM_HINT_DEVICE_NIC_MEM = 1 << 4,
+    SHMEM_HINT_NUMA_0         = 1 << 5,
+    SHMEM_HINT_NUMA_1         = 1 << 6,
 
     SHMEM_HINT_PSYNC          = 1 << 16,
     SHMEM_HINT_PWORK          = 1 << 17,
