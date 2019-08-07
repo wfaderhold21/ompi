@@ -54,10 +54,27 @@ static int sharp_realloc(map_segment_t *s, size_t size,
     return OSHMEM_SUCCESS;
 }
 
+static int sharp_gpu_realloc(map_segment_t *s, size_t size,
+                             void * old_ptr, void ** new_ptr)
+{
+    struct sharp_ctx * ctx = s->context;
+    *new_ptr = sharp_allocator_alloc(ctx->a_obj, size);
+
+    return OSHMEM_SUCCESS;
+}
+
 static int sharp_free(map_segment_t *s, void* ptr)
 {
     struct sharp_ctx * ctx = s->context;    
     mspace_free(ctx->area, ptr);
+    return OSHMEM_SUCCESS;
+}
+
+static int sharp_gpu_free(map_segment_t *s, void * ptr)
+{
+    struct sharp_ctx * ctx = s->context;
+    sharp_allocator_free(ctx->a_obj, ptr);
+
     return OSHMEM_SUCCESS;
 }
 
@@ -66,6 +83,10 @@ static segment_allocator_t sharp_allocator = {
     .free    = sharp_free
 };
 
+static segment_allocator_t sharp_gpu_allocator = {
+    .realloc = sharp_gpu_realloc,
+    .free    = sharp_gpu_free
+};
 
 #endif
 
@@ -98,6 +119,8 @@ int mca_memheap_base_alloc_init(mca_memheap_map_t *map, size_t size, long hint)
         // create a new memsegment
         int nr_segs = map->n_segments;
         map_segment_t * mysegment = &map->mem_segs[nr_segs];
+
+        size_t alloc_size = 1024 * 1024 * 1024;
         
         // alloc space with sharp
         /* do we have a method to alloc memory on the nic? */
@@ -125,17 +148,22 @@ int mca_memheap_base_alloc_init(mca_memheap_map_t *map, size_t size, long hint)
 
         a_obj = sharp_init_allocator_obj(&info_obj);
 
-        mysegment->super.va_base = sharp_allocator_alloc(a_obj, 1024 * (1024 * 1024));
-        mysegment->seg_size = 1024 * (1024 * 1024);
+        mysegment->super.va_base = sharp_allocator_alloc(a_obj, alloc_size);
+        mysegment->seg_size = alloc_size;
         mysegment->super.va_end = mysegment->super.va_base + mysegment->seg_size;
         mysegment->type = MAP_SEGMENT_ALLOC_SHARP;
         mysegment->alloc_hints = hint;
-        mspace area = create_mspace_with_base(mysegment->super.va_base,1024 * (1024 * 1024), 0);
         struct sharp_ctx * sctx = calloc(1, sizeof(struct sharp_ctx));
         sctx->a_obj = a_obj;
-        sctx->area = area;
+        if (hint != SHMEM_HINT_DEVICE_GPU_MEM) {
+            mspace area = create_mspace_with_base(mysegment->super.va_base, alloc_size, 0);
+            mysegment->allocator = &sharp_allocator;
+            sctx->area = area;
+        } else {
+            mysegment->allocator = &sharp_gpu_allocator;
+            sctx->area = NULL;
+        }
         mysegment->context = sctx;
-        mysegment->allocator = &sharp_allocator;
         map->n_segments++;
     }
 
