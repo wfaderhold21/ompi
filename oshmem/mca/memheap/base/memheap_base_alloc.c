@@ -149,6 +149,12 @@ int mca_memheap_base_alloc_init(mca_memheap_map_t *map, size_t size, long hint)
         a_obj = sharp_init_allocator_obj(&info_obj);
 
         mysegment->super.va_base = sharp_allocator_alloc(a_obj, alloc_size);
+        if (mysegment->super.va_base == NULL) {
+            if (sharp_hints == SHARP_HINT_GPU) {
+                // fail silently.. not really a problem, either no GPU or no GPU memory.. fail later
+                return 0;
+            }
+        }
         mysegment->seg_size = alloc_size;
         mysegment->super.va_end = mysegment->super.va_base + mysegment->seg_size;
         mysegment->type = MAP_SEGMENT_ALLOC_SHARP;
