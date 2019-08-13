@@ -142,15 +142,32 @@ static memheap_context_t* _memheap_create(void)
         rc = OSHMEM_SUCCESS;
     }
     mca_memheap_base_map.n_segments = 3;
-    size = 1;
+
+    // numa 0
+    rc = mca_memheap_base_alloc_init(&mca_memheap_base_map, size,
+                                     SHMEM_HINT_NUMA_0);
+    if (rc == OSHMEM_ERR_NOT_IMPLEMENTED) {
+        /* do not treat NOT_IMPLEMENTED as error */
+        rc = OSHMEM_SUCCESS;
+    }
+    mca_memheap_base_map.n_segments = 4;
+
+    // numa 1
+    rc = mca_memheap_base_alloc_init(&mca_memheap_base_map, size,
+                                     SHMEM_HINT_NUMA_1);
+    if (rc == OSHMEM_ERR_NOT_IMPLEMENTED) {
+        /* do not treat NOT_IMPLEMENTED as error */
+        rc = OSHMEM_SUCCESS;
+    }
+    mca_memheap_base_map.n_segments = 5;
+
     rc = mca_memheap_base_alloc_init(&mca_memheap_base_map, size,
                                      SHMEM_HINT_DEVICE_GPU_MEM);
     if (rc == OSHMEM_ERR_NOT_IMPLEMENTED) {
         /* do not treat NOT_IMPLEMENTED as error */
         rc = OSHMEM_SUCCESS;
     }
-
-    mca_memheap_base_map.n_segments = 4;
+    mca_memheap_base_map.n_segments = 6;
 
 
     /* Memory Registration */
