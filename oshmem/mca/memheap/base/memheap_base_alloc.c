@@ -152,7 +152,7 @@ int mca_memheap_base_alloc_init(mca_memheap_map_t *map, size_t size, long hint)
             fprintf(stderr, "Failed to create sharp allocator for hint %d\n", hint);
             return -1;
         }
-        printf("allocating on md: %d\n", sharp_md_get_md_id(a_obj->md[0]->mem_attrib));
+    //    printf("allocating on md: %d\n", sharp_md_get_md_id(a_obj->md[0]->mem_attrib));
         
         mysegment->super.va_base = sharp_allocator_alloc(a_obj, alloc_size);
         if (mysegment->super.va_base == NULL) {
@@ -220,7 +220,7 @@ int mca_memheap_alloc_with_hint(size_t size, long hint, void** ptr)
     for (i = 0; i < mca_memheap_base_map.n_segments; i++) {
         map_segment_t *s = &mca_memheap_base_map.mem_segs[i];
         if (s->allocator && (hint == s->alloc_hints)) {
-            printf("segment selected: %d of %d, hint: %d alloc hint: %d\n", i, mca_memheap_base_map.n_segments, hint, s->alloc_hints);
+//            printf("segment selected: %d of %d, hint: %d alloc hint: %d\n", i, mca_memheap_base_map.n_segments, hint, s->alloc_hints);
             /* Do not fall back to default allocator since it will break the
              * symmetry between PEs
              */
