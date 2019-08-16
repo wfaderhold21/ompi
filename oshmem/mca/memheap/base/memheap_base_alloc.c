@@ -125,33 +125,34 @@ int mca_memheap_base_alloc_init(mca_memheap_map_t *map, size_t size, long hint)
         // alloc space with sharp
         /* do we have a method to alloc memory on the nic? */
         if (hint == SHMEM_HINT_DEVICE_GPU_MEM || hint == SHMEM_HINT_HIGH_BW_MEM) {
-            sharp_hints |= SHARP_HINT_GPU;
-            sharp_constraints |= SHARP_ACCESS_INTRAP;
+            sharp_hints = SHARP_HINT_GPU;
+            sharp_constraints = SHARP_ACCESS_INTRAP;
         } else if (hint == SHMEM_HINT_LOW_LAT_MEM) {
-            sharp_hints |= SHARP_HINT_CPU;
-            sharp_constraints |= SHARP_ACCESS_INTERP;
-        }
-
-        if (hint == SHMEM_HINT_NEAR_NIC_MEM) {
-            sharp_hints |= SHARP_HINT_LATENCY_OPT;
-            sharp_constraints |= SHARP_ACCESS_INTERP;
-        }
-
-        if (hint == SHMEM_HINT_NUMA_0) {
-            sharp_constraints |= SHARP_CONSTRAINT_NUMA_0;
+            sharp_hints = SHARP_HINT_CPU;
+            sharp_constraints = SHARP_ACCESS_INTERP;
+        } else if (hint == SHMEM_HINT_NEAR_NIC_MEM) {
+            sharp_hints = SHARP_HINT_LATENCY_OPT;
+            sharp_constraints = SHARP_ACCESS_INTERP;
+        } else if (hint == SHMEM_HINT_NUMA_0) {
+            sharp_hints = SHARP_HINT_CPU;
+            sharp_constraints = SHARP_CONSTRAINT_NUMA_0;
         } else if (hint == SHMEM_HINT_NUMA_1) {
-            sharp_constraints |= SHARP_CONSTRAINT_NUMA_1;
-        }
-
-        if (hint == SHMEM_HINT_LOCAL) {
-            sharp_hints |= SHARP_HINT_CPU;
-            sharp_constraints |= SHARP_ACCESS_INTERP | (1 << 7);
+            sharp_hints = SHARP_HINT_CPU;
+            sharp_constraints = SHARP_CONSTRAINT_NUMA_1;
+        } else if (hint == SHMEM_HINT_LOCAL) {
+            sharp_hints = SHARP_HINT_CPU;
+            sharp_constraints = SHARP_ACCESS_INTERP | (1 << 7);
         }
 
         info_obj.allocator_hints = sharp_hints;
         info_obj.allocator_constraints = sharp_constraints;
 
         a_obj = sharp_init_allocator_obj(&info_obj);
+        if (a_obj == NULL) {
+            fprintf(stderr, "Failed to create sharp allocator for hint %d\n", hint);
+            return -1;
+        }
+        printf("allocating on md: %d\n", sharp_md_get_md_id(a_obj->md[0]->mem_attrib));
         
         mysegment->super.va_base = sharp_allocator_alloc(a_obj, alloc_size);
         if (mysegment->super.va_base == NULL) {
@@ -175,7 +176,7 @@ int mca_memheap_base_alloc_init(mca_memheap_map_t *map, size_t size, long hint)
             sctx->area = NULL;
         }
         mysegment->context = sctx;
-        map->n_segments++;
+//        map->n_segments++;
     }
 
 
