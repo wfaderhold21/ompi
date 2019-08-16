@@ -25,6 +25,8 @@
 #include "oshmem/mca/spml/ucx/spml_ucx.h"
 
 #include "sshmem_ucx.h"
+#include <numa.h>
+#include <numaif.h>
 
 //#include <ucs/sys/math.h>
 
@@ -121,6 +123,25 @@ segment_create_internal(map_segment_t *ds_buf, void *address, size_t size,
     mem_map_params.field_mask = UCP_MEM_MAP_PARAM_FIELD_ADDRESS |
                                 UCP_MEM_MAP_PARAM_FIELD_LENGTH |
                                 UCP_MEM_MAP_PARAM_FIELD_FLAGS;
+
+    if (hint == SHMEM_HINT_INTERLEAVE) {
+        struct bitmask * numamask;
+        int error; 
+        int i = 0;
+
+        numamask = numa_bitmask_alloc(numa_max_possible_node());
+        copy_bitmask_to_bitmask(numa_all_nodes_ptr, numamask);
+        
+        posix_memalign(&address, 4096, size);
+        
+        error = mbind(address, size, MPOL_BIND, numamask->maskp, numa_max_possible_node(), MPOL_MF_MOVE | MPOL_MF_STRICT);
+        if (error != 0) {
+            perror("mbind error");
+            if (errno == EINVAL) {
+                printf("page alignment?\n");
+            }
+        }
+    }
 
     mem_map_params.address    = address;
     mem_map_params.length     = size;

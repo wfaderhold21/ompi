@@ -104,7 +104,7 @@ int mca_memheap_base_alloc_init(mca_memheap_map_t *map, size_t size, long hint)
 
     map_segment_t *s = &map->mem_segs[map->n_segments];
     seg_filename = oshmem_get_unique_file_name(oshmem_my_proc_id());
-    if (hint == SHMEM_HINT_DEVICE_NIC_MEM || hint == 0) {
+    if (hint == SHMEM_HINT_DEVICE_NIC_MEM || hint == 0 || hint == SHMEM_HINT_INTERLEAVE) {
         ret = mca_sshmem_segment_create(s, seg_filename, size, hint);
     } else {
         sharp_allocator_info_params_t info_obj;
@@ -120,7 +120,7 @@ int mca_memheap_base_alloc_init(mca_memheap_map_t *map, size_t size, long hint)
         int nr_segs = map->n_segments;
         map_segment_t * mysegment = &map->mem_segs[nr_segs];
 
-        size_t alloc_size = 1024 * 1024 * 1024;
+        size_t alloc_size = size;
         
         // alloc space with sharp
         /* do we have a method to alloc memory on the nic? */
@@ -141,6 +141,11 @@ int mca_memheap_base_alloc_init(mca_memheap_map_t *map, size_t size, long hint)
             sharp_constraints |= SHARP_CONSTRAINT_NUMA_0;
         } else if (hint == SHMEM_HINT_NUMA_1) {
             sharp_constraints |= SHARP_CONSTRAINT_NUMA_1;
+        }
+
+        if (hint == SHMEM_HINT_LOCAL) {
+            sharp_hints |= SHARP_HINT_CPU;
+            sharp_constraints |= SHARP_ACCESS_INTERP | (1 << 7);
         }
 
         info_obj.allocator_hints = sharp_hints;

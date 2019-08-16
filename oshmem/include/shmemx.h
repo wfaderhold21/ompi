@@ -27,6 +27,8 @@ enum {
     SHMEM_HINT_DEVICE_NIC_MEM = 1 << 4,
     SHMEM_HINT_NUMA_0         = 1 << 5,
     SHMEM_HINT_NUMA_1         = 1 << 6,
+    SHMEM_HINT_LOCAL          = 1 << 7,
+    SHMEM_HINT_INTERLEAVE     = 1 << 8,
 
     SHMEM_HINT_PSYNC          = 1 << 16,
     SHMEM_HINT_PWORK          = 1 << 17,
