@@ -123,7 +123,7 @@ static memheap_context_t* _memheap_create(void)
         if (rc == OSHMEM_ERR_NOT_IMPLEMENTED) {
             /* do not treat NOT_IMPLEMENTED as error */
             rc = OSHMEM_SUCCESS;
-        }
+        } 
     }
 
    
@@ -140,8 +140,7 @@ static memheap_context_t* _memheap_create(void)
     if (rc == OSHMEM_ERR_NOT_IMPLEMENTED) {
         /* do not treat NOT_IMPLEMENTED as error */
         rc = OSHMEM_SUCCESS;
-    }
-    //mca_memheap_base_map.n_segments = 3;
+    } 
 
     // numa 0
     rc = mca_memheap_base_alloc_init(&mca_memheap_base_map, size,
@@ -149,8 +148,7 @@ static memheap_context_t* _memheap_create(void)
     if (rc == OSHMEM_ERR_NOT_IMPLEMENTED) {
         /* do not treat NOT_IMPLEMENTED as error */
         rc = OSHMEM_SUCCESS;
-    }
-    mca_memheap_base_map.n_segments = 4;
+    } 
 
     // numa 1
     rc = mca_memheap_base_alloc_init(&mca_memheap_base_map, size,
@@ -158,8 +156,7 @@ static memheap_context_t* _memheap_create(void)
     if (rc == OSHMEM_ERR_NOT_IMPLEMENTED) {
         /* do not treat NOT_IMPLEMENTED as error */
         rc = OSHMEM_SUCCESS;
-    }
-    //mca_memheap_base_map.n_segments++;
+    } 
 
     #ifdef WITH_GPU
     rc = mca_memheap_base_alloc_init(&mca_memheap_base_map, size,
@@ -167,8 +164,7 @@ static memheap_context_t* _memheap_create(void)
     if (rc == OSHMEM_ERR_NOT_IMPLEMENTED) {
         /* do not treat NOT_IMPLEMENTED as error */
         rc = OSHMEM_SUCCESS;
-    }
-    //mca_memheap_base_map.n_segments++;
+    } 
     #endif
 
     rc = mca_memheap_base_alloc_init(&mca_memheap_base_map, size,
@@ -176,22 +172,14 @@ static memheap_context_t* _memheap_create(void)
     if (rc == OSHMEM_ERR_NOT_IMPLEMENTED) {
         /* do not treat NOT_IMPLEMENTED as error */
         rc = OSHMEM_SUCCESS;
-    }
-    //mca_memheap_base_map.n_segments++;
+    } 
 
     rc = mca_memheap_base_alloc_init(&mca_memheap_base_map, size,
                                      SHMEM_HINT_INTERLEAVE);
     if (rc == OSHMEM_ERR_NOT_IMPLEMENTED) {
         /* do not treat NOT_IMPLEMENTED as error */
         rc = OSHMEM_SUCCESS;
-    }
-    //mca_memheap_base_map.n_segments++;
-
-    #ifdef WITH_GPU
-    mca_memheap_base_map.n_segments = 8;
-    #else
-    mca_memheap_base_map.n_segments = 7;
-    #endif
+    } 
 
     /* Memory Registration */
     if (OSHMEM_SUCCESS == rc) {
