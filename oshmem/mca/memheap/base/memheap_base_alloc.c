@@ -149,10 +149,8 @@ int mca_memheap_base_alloc_init(mca_memheap_map_t *map, size_t size, long hint)
 
         a_obj = sharp_init_allocator_obj(&info_obj);
         if (a_obj == NULL) {
-            fprintf(stderr, "Failed to create sharp allocator for hint %d\n", hint);
             return -1;
         }
-    //    printf("allocating on md: %d\n", sharp_md_get_md_id(a_obj->md[0]->mem_attrib));
         
         mysegment->super.va_base = sharp_allocator_alloc(a_obj, alloc_size);
         if (mysegment->super.va_base == NULL) {
