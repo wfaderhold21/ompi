@@ -13,12 +13,14 @@
 #include <ucc/api/ucc.h>
 
 static inline ucc_status_t mca_scoll_ucc_barrier_init(mca_scoll_ucc_module_t * ucc_module,
+                                                      long * pSync,
                                                       ucc_coll_req_h * req)
 {
     ucc_coll_args_t coll = {
         .mask = 0,
         .coll_type = UCC_COLL_TYPE_BARRIER
     };
+    coll.src.info.buffer = pSync;
     SCOLL_UCC_REQ_INIT(req, coll, ucc_module);
     return UCC_OK;
 fallback:
@@ -33,9 +35,11 @@ int mca_scoll_ucc_barrier(struct oshmem_group_t *group, long *pSync, int alg)
     UCC_VERBOSE(3, "running ucc barrier");
     ucc_module = (mca_scoll_ucc_module_t *) group->g_scoll.scoll_barrier_module;
 
-    SCOLL_UCC_CHECK(mca_scoll_ucc_barrier_init(ucc_module, &req));
+    SCOLL_UCC_CHECK(mca_scoll_ucc_barrier_init(ucc_module, pSync, &req));
     SCOLL_UCC_CHECK(ucc_collective_post(req));
     SCOLL_UCC_CHECK(scoll_ucc_req_wait(req));
+
+    pSync[0] = pSync[1] = SHMEM_SYNC_VALUE;
     return OSHMEM_SUCCESS;
 fallback:
     UCC_VERBOSE(3, "running fallback barrier");

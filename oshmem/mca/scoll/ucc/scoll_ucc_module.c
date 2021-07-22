@@ -15,10 +15,14 @@
 #include "oshmem/runtime/runtime.h"
 #include "ompi/mca/coll/base/coll_tags.h"
 #include "ompi/mca/pml/pml.h"
+#include "oshmem/mca/memheap/base/base.h"
+#include "oshmem/mca/spml/ucx/spml_ucx.h"
 #include "scoll_ucc.h"
 #include "scoll_ucc_debug.h"
 
 #include <ucc/api/ucc.h>
+
+extern long * mca_scoll_sync_array;
 
 #define OBJ_RELEASE_IF_NOT_NULL( obj ) if( NULL != (obj) ) OBJ_RELEASE( obj );
 
@@ -180,6 +184,42 @@ static ucc_status_t oob_allgather_test(void *req)
     return oob_probe_test(oob_req);
 }
 
+struct p2p_info
+{
+    void * va;
+    void * rva;
+    void * packed_key;
+};
+typedef struct p2p_info p2p_info_t;
+
+int conn_info_lookup(void * conn_ctx,
+                     uint64_t rank,
+                     void *** conn_info,
+                     void * request)
+{
+    p2p_info_t ** p = *((p2p_info_t ***) conn_info);
+    ompi_proc_t * proc;
+
+    proc = oshmem_proc_find(rank);
+   
+    if ((proc->super.proc_flags & OPAL_PROC_NON_LOCAL)) {
+        mca_spml_ucx_ctx_t *ucx_ctx = &mca_spml_ucx_ctx_default;
+        spml_ucx_mkey_t *ucx_mkey = mca_spml_ucx_ctx_mkey_by_va(ucx_ctx, rank, p[0]->va, &p[0]->rva, &mca_spml_ucx);
+
+        p[0]->packed_key = ucx_mkey->rkey;
+        //p[0]->packed_key = s->mkeys_cache[rank]->u.data;
+//        printf("[non-local %d to %d] mem_h: %p\n", oshmem_group_all->my_pe, rank, ucx_mkey->mem_h);
+    } else {
+        map_segment_t * s = memheap_find_va(p[0]->va);
+
+        p[0]->rva = s->mkeys_cache[rank]->va_base + ((ptrdiff_t) p[0]->va - (ptrdiff_t) s->mkeys->va_base);
+        p[0]->packed_key = s->mkeys_cache[rank]->u.data;
+//        printf("[local %d to %d] mem_h: %p\n", oshmem_group_all->my_pe, rank, ucx_mkey->mem_h);
+    }
+   
+    return 0; 
+}
+
 static int mca_scoll_ucc_init_ctx(oshmem_group_t *osh_group) 
 {
     mca_scoll_ucc_component_t     *cm = &mca_scoll_ucc_component;
@@ -287,7 +327,9 @@ static int mca_scoll_ucc_module_enable(mca_scoll_base_module_t *module,
     ucc_team_params_t team_params = {
         .mask             = UCC_TEAM_PARAM_FIELD_EP | 
                             UCC_TEAM_PARAM_FIELD_EP_RANGE |
-                            UCC_TEAM_PARAM_FIELD_OOB, 
+                            UCC_TEAM_PARAM_FIELD_OOB |
+                            UCC_TEAM_PARAM_FIELD_P2P_CONN |
+                            UCC_TEAM_PARAM_FIELD_MEM_PARAMS, 
         .oob = {
             .allgather    = oob_allgather,
             .req_test     = oob_allgather_test,
@@ -297,6 +339,13 @@ static int mca_scoll_ucc_module_enable(mca_scoll_base_module_t *module,
         },
         .ep       = ompi_comm_rank(osh_group->ompi_comm),
         .ep_range = UCC_COLLECTIVE_EP_RANGE_CONTIG,
+        .p2p_conn = {
+            .conn_info_lookup = conn_info_lookup,
+        },
+        .mem_params = {
+            .address = mca_scoll_sync_array,
+            .len = _SHMEM_BARRIER_SYNC_SIZE * sizeof(*mca_scoll_sync_array),
+        },
     };
 
     if (OSHMEM_SUCCESS != mca_scoll_ucc_save_coll_handlers(module, osh_group)) {
