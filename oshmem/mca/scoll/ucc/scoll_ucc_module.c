@@ -18,7 +18,12 @@
 #include "scoll_ucc.h"
 #include "scoll_ucc_debug.h"
 
+#include "oshmem/mca/memheap/base/base.h"
+#include "oshmem/mca/spml/ucx/spml_ucx.h"
+
 #include <ucc/api/ucc.h>
+
+extern long * mca_scoll_sync_array;
 
 #define OBJ_RELEASE_IF_NOT_NULL( obj ) if( NULL != (obj) ) OBJ_RELEASE( obj );
 
@@ -49,13 +54,14 @@ int mca_scoll_ucc_progress(void)
 
 static void mca_scoll_ucc_module_destruct(mca_scoll_ucc_module_t *ucc_module)
 {
+    UCC_VERBOSE(5, "destruct called\n");
     if (ucc_module->ucc_team) {
         ucc_team_destroy(ucc_module->ucc_team);
         --mca_scoll_ucc_component.nr_modules;
     }
-
-    if (1 == mca_scoll_ucc_component.nr_modules) {
-       if (mca_scoll_ucc_component.libucc_initialized) {
+/*
+    if (0 == mca_scoll_ucc_component.nr_modules) {
+       if (mca_scoll_ucc_component.ucc_context) {
             UCC_VERBOSE(1, "finalizing ucc library");
             opal_progress_unregister(mca_scoll_ucc_progress);
             ucc_context_destroy(mca_scoll_ucc_component.ucc_context);
@@ -63,7 +69,7 @@ static void mca_scoll_ucc_module_destruct(mca_scoll_ucc_module_t *ucc_module)
             mca_scoll_ucc_component.libucc_initialized = false;
         }
     }         
-
+*/
     OBJ_RELEASE_IF_NOT_NULL(ucc_module->previous_alltoall_module);
     OBJ_RELEASE_IF_NOT_NULL(ucc_module->previous_collect_module);
     OBJ_RELEASE_IF_NOT_NULL(ucc_module->previous_reduce_module);
@@ -262,14 +268,112 @@ static int mca_scoll_ucc_init_ctx(oshmem_group_t *osh_group)
     ucc_context_config_release(ctx_config);
 
     opal_progress_register(mca_scoll_ucc_progress);
-    UCC_VERBOSE(1, "initialized ucc context");
     cm->libucc_initialized = true;
+    UCC_VERBOSE(1, "initialized ucc context");
     return OSHMEM_SUCCESS;
 
 cleanup_lib:
     ucc_finalize(cm->ucc_lib);
     cm->ucc_enable         = 0;
     cm->libucc_initialized = false;
+    return OSHMEM_ERROR;
+}
+
+struct p2p_info
+{
+    void * va_base;
+    void * packed_key;
+    void * rkey;
+};
+typedef struct p2p_info p2p_info_t;
+
+int conn_info_lookup(void * conn_ctx,
+                     uint64_t rank,
+                     void *** conn_info,
+                     void * request)
+{
+    p2p_info_t ** p = *((p2p_info_t ***) conn_info);
+    mca_spml_ucx_ctx_t *ucx_ctx;
+
+    for (int i = 0; i < 2; i++) {
+        if (rank == oshmem_group_all->my_pe) {
+            p[rank][i].va_base = memheap_map->mem_segs[i].mkeys->va_base;
+            p[rank][i].packed_key = memheap_map->mem_segs[i].mkeys->u.data;
+        } else {
+            if (memheap_map->mem_segs[i].mkeys_cache[rank]) {
+                p[rank][i].va_base = memheap_map->mem_segs[i].mkeys_cache[rank]->va_base; 
+                ompi_proc_t * proc;
+                if ((proc->super.proc_flags & OPAL_PROC_NON_LOCAL)) {
+                    p[rank][i].packed_key = ucx_ctx->ucp_peers[rank].mkeys[i].key.rkey;
+                } else {
+                    p[rank][i].packed_key = memheap_map->mem_segs[i].mkeys_cache[rank]->u.data;
+                } 
+            }
+        }
+    }
+    
+    return 0;
+}
+
+ucc_status_t conn_req_test(void * request)
+{
+    int * c = (int *) request;
+    *c = UCC_OK;
+    return UCC_OK;
+}
+
+int mca_scoll_ucc_team_create(mca_scoll_ucc_module_t *ucc_module,
+                                     oshmem_group_t *osh_group)
+{
+    mca_scoll_ucc_component_t *cm         = &mca_scoll_ucc_component;
+    ucc_status_t               status     = UCC_OK;
+
+    ucc_team_params_t team_params = {
+        .mask             = UCC_TEAM_PARAM_FIELD_EP | 
+                            UCC_TEAM_PARAM_FIELD_EP_RANGE |
+                            UCC_TEAM_PARAM_FIELD_OOB |
+                            UCC_TEAM_PARAM_FIELD_P2P_CONN |
+                            UCC_TEAM_PARAM_FIELD_MEM_PARAMS,
+        .oob = {
+            .allgather    = oob_allgather,
+            .req_test     = oob_allgather_test,
+            .req_free     = oob_allgather_free,
+            .coll_info    = (void *)osh_group->ompi_comm,
+            .n_oob_eps    = ompi_comm_size(osh_group->ompi_comm),
+            .oob_ep       = ompi_comm_rank(osh_group->ompi_comm),
+        },
+        .ep       = ompi_comm_rank(osh_group->ompi_comm),
+        .ep_range = UCC_COLLECTIVE_EP_RANGE_CONTIG,
+        .p2p_conn = {
+            .conn_info_lookup = conn_info_lookup,
+            .req_test = conn_req_test,
+        },
+        .mem_params = {
+            .address = mca_scoll_sync_array,
+            .len = _SHMEM_BARRIER_SYNC_SIZE * sizeof(*mca_scoll_sync_array),
+        },
+    };
+
+    if (UCC_OK != ucc_team_create_post(&cm->ucc_context, 1, 
+                                       &team_params, &ucc_module->ucc_team)) {
+        UCC_ERROR("ucc_team_create_post failed");
+    }
+
+    while (UCC_INPROGRESS == (status = ucc_team_create_test(ucc_module->ucc_team))) {
+        opal_progress();
+    }
+    if (UCC_OK != status) {
+        UCC_ERROR("ucc_team_create_test failed (%d)", status);
+        goto err;
+    }
+
+
+    ++cm->nr_modules;
+    return OSHMEM_SUCCESS;
+
+err:
+    cm->ucc_enable = 0;
+    opal_progress_unregister(mca_scoll_ucc_progress);
     return OSHMEM_ERROR;
 }
 
@@ -285,22 +389,6 @@ static int mca_scoll_ucc_module_enable(mca_scoll_base_module_t *module,
 
     ucc_module->ucc_team = NULL;
 
-    ucc_team_params_t team_params = {
-        .mask             = UCC_TEAM_PARAM_FIELD_EP | 
-                            UCC_TEAM_PARAM_FIELD_EP_RANGE |
-                            UCC_TEAM_PARAM_FIELD_OOB, 
-        .oob = {
-            .allgather    = oob_allgather,
-            .req_test     = oob_allgather_test,
-            .req_free     = oob_allgather_free,
-            .coll_info    = (void *)osh_group->ompi_comm,
-            .n_oob_eps    = ompi_comm_size(osh_group->ompi_comm),
-            .oob_ep       = ompi_comm_rank(osh_group->ompi_comm),
-        },
-        .ep       = ompi_comm_rank(osh_group->ompi_comm),
-        .ep_range = UCC_COLLECTIVE_EP_RANGE_CONTIG,
-    };
-
     if (OSHMEM_SUCCESS != mca_scoll_ucc_save_coll_handlers(module, osh_group)) {
         UCC_ERROR("UCC module enable failed");
         /* There are no modules available */
@@ -308,30 +396,14 @@ static int mca_scoll_ucc_module_enable(mca_scoll_base_module_t *module,
                        "module_enable:fatal", true,
     	       		   "UCC module enable failed - aborting to prevent inconsistent application state");
 
-        return OSHMEM_ERROR;
-    }
-    
-    ++cm->nr_modules;
-    if (cm->ucc_context) {
-        if (UCC_OK != ucc_team_create_post(&cm->ucc_context, 1, 
-                                           &team_params, &ucc_module->ucc_team)) {
-            UCC_ERROR("ucc_team_create_post failed");
-        }
-
-        while (UCC_INPROGRESS == (status = ucc_team_create_test(ucc_module->ucc_team))) {
-            opal_progress();
-        }
-    } 
-
-    if (UCC_OK != status) {
-        UCC_ERROR("ucc_team_create_test failed");
         goto err;
     }
 
+    UCC_VERBOSE(1, "ucc enabled");
+    
     return OSHMEM_SUCCESS;
 
 err:
-    ucc_module->ucc_team = NULL;
     cm->ucc_enable = 0;
     opal_progress_unregister(mca_scoll_ucc_progress);
     return OSHMEM_ERROR;
@@ -372,12 +444,12 @@ mca_scoll_ucc_comm_query(oshmem_group_t *osh_group, int *priority)
     }
     OPAL_TIMING_ENV_INIT(comm_query);
 
+    UCC_VERBOSE(5, "libucc_initialized: %d\n", cm->libucc_initialized);
     if (!cm->libucc_initialized) {
-        if (0 < cm->nr_modules) {
-            if (OSHMEM_SUCCESS != mca_scoll_ucc_init_ctx(osh_group)) {
-                cm->ucc_enable = 0;
-                return NULL;
-            }
+        cm->libucc_initialized = true;
+        if (OSHMEM_SUCCESS != mca_scoll_ucc_init_ctx(osh_group)) {
+            cm->ucc_enable = 0;
+            return NULL;
         }
     }
 
@@ -396,6 +468,7 @@ mca_scoll_ucc_comm_query(oshmem_group_t *osh_group, int *priority)
     SET_SCOLL_PTR(ucc_module, ALLGATHER, collect);
     SET_SCOLL_PTR(ucc_module, ALLTOALL, alltoall);
 
+    UCC_VERBOSE(5, "ucc returning success");
     module = &ucc_module->super;
     return module;
 }

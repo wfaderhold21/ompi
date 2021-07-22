@@ -20,6 +20,12 @@
                                        _module->ucc_team)); \
 } while(0)
 
+int mca_scoll_ucc_progress(void);
+
+
+int mca_scoll_ucc_team_create(mca_scoll_ucc_module_t *ucc_module,
+                                       oshmem_group_t *osh_group);
+
 static inline ucc_status_t scoll_ucc_req_wait(ucc_coll_req_h req)
 {
     ucc_status_t status;
@@ -29,7 +35,8 @@ static inline ucc_status_t scoll_ucc_req_wait(ucc_coll_req_h req)
                       ucc_status_string(status));
             return status;
         }
-        ucc_context_progress(mca_scoll_ucc_component.ucc_context);
+        mca_scoll_ucc_progress();
+//        ucc_context_progress(mca_scoll_ucc_component.ucc_context);
         opal_progress();
     }
     return ucc_collective_finalize(req);
