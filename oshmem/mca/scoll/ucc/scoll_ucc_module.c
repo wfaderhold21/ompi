@@ -54,13 +54,15 @@ int mca_scoll_ucc_progress(void)
 
 static void mca_scoll_ucc_module_destruct(mca_scoll_ucc_module_t *ucc_module)
 {
+    bool team_removed = false;
     UCC_VERBOSE(5, "destruct called\n");
     if (ucc_module->ucc_team) {
         ucc_team_destroy(ucc_module->ucc_team);
         --mca_scoll_ucc_component.nr_modules;
+        team_removed = true;
     }
-/*
-    if (0 == mca_scoll_ucc_component.nr_modules) {
+
+    if (team_removed && 0 == mca_scoll_ucc_component.nr_modules) {
        if (mca_scoll_ucc_component.ucc_context) {
             UCC_VERBOSE(1, "finalizing ucc library");
             opal_progress_unregister(mca_scoll_ucc_progress);
@@ -69,7 +71,7 @@ static void mca_scoll_ucc_module_destruct(mca_scoll_ucc_module_t *ucc_module)
             mca_scoll_ucc_component.libucc_initialized = false;
         }
     }         
-*/
+
     OBJ_RELEASE_IF_NOT_NULL(ucc_module->previous_alltoall_module);
     OBJ_RELEASE_IF_NOT_NULL(ucc_module->previous_collect_module);
     OBJ_RELEASE_IF_NOT_NULL(ucc_module->previous_reduce_module);
@@ -293,22 +295,20 @@ int conn_info_lookup(void * conn_ctx,
                      void * request)
 {
     p2p_info_t ** p = *((p2p_info_t ***) conn_info);
-    mca_spml_ucx_ctx_t *ucx_ctx;
+    mca_spml_ucx_ctx_t *ucx_ctx = &mca_spml_ucx_ctx_default;
 
-    for (int i = 0; i < 2; i++) {
-        if (rank == oshmem_group_all->my_pe) {
+    for (int i = 0; i < memheap_map->n_segments; i++) {
+        if (memheap_map->mem_segs[i].mkeys_cache[rank]) {
+            p[rank][i].va_base = memheap_map->mem_segs[i].mkeys_cache[rank]->va_base; 
+            ompi_proc_t * proc = oshmem_proc_find(rank);
+            if ((proc->super.proc_flags & OPAL_PROC_NON_LOCAL)) {
+                p[rank][i].packed_key = ucx_ctx->ucp_peers[rank].mkeys[i].key.rkey;
+            } else {
+                p[rank][i].packed_key = memheap_map->mem_segs[i].mkeys_cache[rank]->u.data;
+            } 
+        } else {
             p[rank][i].va_base = memheap_map->mem_segs[i].mkeys->va_base;
             p[rank][i].packed_key = memheap_map->mem_segs[i].mkeys->u.data;
-        } else {
-            if (memheap_map->mem_segs[i].mkeys_cache[rank]) {
-                p[rank][i].va_base = memheap_map->mem_segs[i].mkeys_cache[rank]->va_base; 
-                ompi_proc_t * proc;
-                if ((proc->super.proc_flags & OPAL_PROC_NON_LOCAL)) {
-                    p[rank][i].packed_key = ucx_ctx->ucp_peers[rank].mkeys[i].key.rkey;
-                } else {
-                    p[rank][i].packed_key = memheap_map->mem_segs[i].mkeys_cache[rank]->u.data;
-                } 
-            }
         }
     }
     
