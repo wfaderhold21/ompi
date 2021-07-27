@@ -284,6 +284,7 @@ cleanup_lib:
 struct p2p_info
 {
     void * va_base;
+    size_t len;
     void * packed_key;
     void * rkey;
 };
@@ -298,18 +299,16 @@ int conn_info_lookup(void * conn_ctx,
     mca_spml_ucx_ctx_t *ucx_ctx = &mca_spml_ucx_ctx_default;
 
     for (int i = 0; i < memheap_map->n_segments; i++) {
-        if (memheap_map->mem_segs[i].mkeys_cache[rank]) {
-            p[rank][i].va_base = memheap_map->mem_segs[i].mkeys_cache[rank]->va_base; 
-            ompi_proc_t * proc = oshmem_proc_find(rank);
-            if ((proc->super.proc_flags & OPAL_PROC_NON_LOCAL)) {
-                p[rank][i].packed_key = ucx_ctx->ucp_peers[rank].mkeys[i].key.rkey;
-            } else {
-                p[rank][i].packed_key = memheap_map->mem_segs[i].mkeys_cache[rank]->u.data;
-            } 
+        p[rank][i].va_base = memheap_map->mem_segs[i].mkeys_cache[rank]->va_base; 
+        p[rank][i].len = (ptrdiff_t) memheap_map->mem_segs[i].super.va_end - 
+                         (ptrdiff_t) memheap_map->mem_segs[i].super.va_base;
+
+        ompi_proc_t * proc = oshmem_proc_find(rank);
+        if ((proc->super.proc_flags & OPAL_PROC_NON_LOCAL)) {
+            p[rank][i].packed_key = ucx_ctx->ucp_peers[rank].mkeys[i].key.rkey;
         } else {
-            p[rank][i].va_base = memheap_map->mem_segs[i].mkeys->va_base;
-            p[rank][i].packed_key = memheap_map->mem_segs[i].mkeys->u.data;
-        }
+            p[rank][i].packed_key = memheap_map->mem_segs[i].mkeys_cache[rank]->u.data;
+        } 
     }
     
     return 0;
