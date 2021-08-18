@@ -20,6 +20,7 @@
 
 #include "oshmem/mca/memheap/base/base.h"
 #include "oshmem/mca/spml/ucx/spml_ucx.h"
+#include "oshmem/mca/memheap/memheap.h"
 
 #include <ucc/api/ucc.h>
 
@@ -55,7 +56,6 @@ int mca_scoll_ucc_progress(void)
 static void mca_scoll_ucc_module_destruct(mca_scoll_ucc_module_t *ucc_module)
 {
     bool team_removed = false;
-    UCC_VERBOSE(5, "destruct called\n");
     if (ucc_module->ucc_team) {
         ucc_team_destroy(ucc_module->ucc_team);
         --mca_scoll_ucc_component.nr_modules;
@@ -299,18 +299,18 @@ int conn_info_lookup(void * conn_ctx,
     mca_spml_ucx_ctx_t *ucx_ctx = &mca_spml_ucx_ctx_default;
 
     for (int i = 0; i < memheap_map->n_segments; i++) {
-        p[rank][i].va_base = memheap_map->mem_segs[i].mkeys_cache[rank]->va_base; 
+        if (rank == oshmem_my_proc_id()) { 
+            p[rank][i].va_base = memheap_map->mem_segs[i].mkeys[0].va_base;
+            p[rank][i].packed_key = memheap_map->mem_segs[i].mkeys[0].u.data;
+        } else {
+            p[rank][i].va_base = memheap_map->mem_segs[i].mkeys_cache[rank]->va_base; 
+            p[rank][i].packed_key = memheap_map->mem_segs[i].mkeys_cache[rank]->u.data;
+        }
         p[rank][i].len = (ptrdiff_t) memheap_map->mem_segs[i].super.va_end - 
                          (ptrdiff_t) memheap_map->mem_segs[i].super.va_base;
-
-        ompi_proc_t * proc = oshmem_proc_find(rank);
-        if ((proc->super.proc_flags & OPAL_PROC_NON_LOCAL)) {
-            p[rank][i].packed_key = ucx_ctx->ucp_peers[rank].mkeys[i].key.rkey;
-        } else {
-            p[rank][i].packed_key = memheap_map->mem_segs[i].mkeys_cache[rank]->u.data;
-        } 
     }
-    
+
+
     return 0;
 }
 
@@ -326,6 +326,13 @@ int mca_scoll_ucc_team_create(mca_scoll_ucc_module_t *ucc_module,
 {
     mca_scoll_ucc_component_t *cm         = &mca_scoll_ucc_component;
     ucc_status_t               status     = UCC_OK;
+    long * sync_array;
+
+    // FIXME: this will not work in general when team creation is not including world
+    MCA_MEMHEAP_CALL(private_alloc(sizeof(long) * _SHMEM_BARRIER_SYNC_SIZE, &sync_array));
+    for (int i = 0; i < _SHMEM_BARRIER_SYNC_SIZE; i++) {
+        sync_array[i] = -1;
+    }
 
     ucc_team_params_t team_params = {
         .mask             = UCC_TEAM_PARAM_FIELD_EP | 
@@ -348,8 +355,8 @@ int mca_scoll_ucc_team_create(mca_scoll_ucc_module_t *ucc_module,
             .req_test = conn_req_test,
         },
         .mem_params = {
-            .address = mca_scoll_sync_array,
-            .len = _SHMEM_BARRIER_SYNC_SIZE * sizeof(*mca_scoll_sync_array),
+            .address = sync_array,
+            .len = _SHMEM_BARRIER_SYNC_SIZE * sizeof(*sync_array),
         },
     };
 

@@ -268,7 +268,8 @@ static int spml_ucx_init(void)
     params.field_mask        = UCP_PARAM_FIELD_FEATURES          |
                                UCP_PARAM_FIELD_ESTIMATED_NUM_EPS |
                                UCP_PARAM_FIELD_MT_WORKERS_SHARED;
-    params.features          = UCP_FEATURE_RMA   |
+    params.features          = UCP_FEATURE_TAG   |
+                               UCP_FEATURE_RMA   |
                                UCP_FEATURE_AMO32 |
                                UCP_FEATURE_AMO64;
     params.estimated_num_eps = ompi_proc_world_size();

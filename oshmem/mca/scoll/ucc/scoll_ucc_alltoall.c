@@ -13,23 +13,30 @@
 #include <ucc/api/ucc.h>
 
 static inline ucc_status_t mca_scoll_ucc_alltoall_init(const void *sbuf, void *rbuf,
-                                                       int count,
+                                                       int count, size_t element_size,
                                                        mca_scoll_ucc_module_t * ucc_module,
                                                        ucc_coll_req_h * req)
 {
+    ucc_datatype_t dt;
+    if (element_size == 8) {
+        dt = UCC_DT_INT64;
+    } else if (element_size == 4) {
+        dt = UCC_DT_INT32;
+    }
+    
     ucc_coll_args_t coll = {
         .mask = 0,
         .coll_type = UCC_COLL_TYPE_ALLTOALL,
         .src.info = {
             .buffer = (void *)sbuf,
             .count = count,
-            .datatype = UCC_DT_UINT8,
+            .datatype = dt,
             .mem_type = UCC_MEMORY_TYPE_UNKNOWN
         },
         .dst.info = {
             .buffer = rbuf,
             .count = count,
-            .datatype = UCC_DT_UINT8,
+            .datatype = dt,
             .mem_type = UCC_MEMORY_TYPE_UNKNOWN
         },
     };
@@ -69,7 +76,7 @@ int mca_scoll_ucc_alltoall(struct oshmem_group_t *group,
         return OSHMEM_SUCCESS;
     }
 
-    SCOLL_UCC_CHECK(mca_scoll_ucc_alltoall_init(source, target, count, ucc_module, &req));
+    SCOLL_UCC_CHECK(mca_scoll_ucc_alltoall_init(source, target, count, element_size, ucc_module, &req));
     SCOLL_UCC_CHECK(ucc_collective_post(req));
     SCOLL_UCC_CHECK(scoll_ucc_req_wait(req));
     return OSHMEM_SUCCESS;
