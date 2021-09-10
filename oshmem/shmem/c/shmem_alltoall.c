@@ -21,6 +21,8 @@
 
 #include "oshmem/proc/proc.h"
 
+#include "shmemx.h"
+
 static void _shmem_alltoall(void *target,
                             const void *source,
                             ptrdiff_t dst, ptrdiff_t sst,
@@ -30,6 +32,20 @@ static void _shmem_alltoall(void *target,
                             int logPE_stride,
                             int PE_size,
                             long *pSync);
+
+static int _shmem_alltoall_nb(void *target,
+                            const void *source,
+                            ptrdiff_t dst, ptrdiff_t sst,
+                            size_t nelems,
+                            size_t element_size,
+                            int PE_start,
+                            int logPE_stride,
+                            int PE_size,
+                            long *pSync,
+                            uint32_t tag,
+                            shmem_req_h * req);
+
+
 
 #define SHMEM_TYPE_ALLTOALL(name, element_size)                      \
     void shmem##name(void *target,                                   \
@@ -47,6 +63,26 @@ static void _shmem_alltoall(void *target,
     _shmem_alltoall(target, source, 1, 1, nelems, element_size,      \
                        PE_start, logPE_stride, PE_size,              \
                        pSync);                                       \
+}
+
+#define SHMEM_TYPE_ALLTOALL_NB(name, element_size)                   \
+    int shmemx##name(void *target,                                   \
+                     const void *source,                             \
+                     size_t nelems,                                  \
+                     int PE_start,                                   \
+                     int logPE_stride,                               \
+                     int PE_size,                                    \
+                     long *pSync,                                    \
+                     uint32_t tag,                                   \
+                     shmem_req_h * req)                              \
+{                                                                    \
+    RUNTIME_CHECK_INIT();                                            \
+    RUNTIME_CHECK_ADDR_SIZE(target, nelems);                         \
+    RUNTIME_CHECK_ADDR_SIZE(source, nelems);                         \
+                                                                     \
+    return _shmem_alltoall_nb(target, source, 1, 1, nelems, element_size,   \
+                       PE_start, logPE_stride, PE_size,              \
+                       pSync, tag, req);                             \
 }
 
 #define SHMEM_TYPE_ALLTOALLS(name, element_size)                     \
@@ -95,6 +131,41 @@ static void _shmem_alltoall(void *target,
                                        SCOLL_DEFAULT_ALG);
     oshmem_proc_group_destroy(group);
     RUNTIME_CHECK_RC(rc);
+}
+
+static int _shmem_alltoall_nb(void *target,
+                               const void *source,
+                               ptrdiff_t dst, ptrdiff_t sst,
+                               size_t nelems,
+                               size_t element_size,
+                               int PE_start,
+                               int logPE_stride,
+                               int PE_size,
+                               long *pSync,
+                               uint32_t tag,
+                               shmem_req_h * request)
+{
+    int rc;
+    oshmem_group_t* group;
+
+    /* Create group basing PE_start, logPE_stride and PE_size */
+    group = oshmem_proc_group_create_nofail(PE_start, 1<<logPE_stride, PE_size);
+    /* Call collective alltoall operation */
+    rc = group->g_scoll.scoll_alltoall_nb(group,
+                                          target,
+                                          source,
+                                          dst,
+                                          sst,
+                                          nelems,
+                                          element_size,
+                                          pSync,
+                                          SCOLL_DEFAULT_ALG,
+                                          tag,
+                                          request);
+
+    oshmem_proc_group_destroy(group);
+    RUNTIME_CHECK_RC(rc);
+    return rc;
 }
 
 #if OSHMEM_PROFILING
@@ -165,6 +236,8 @@ static void _shmem_alltoall(void *target,
 
 SHMEM_TYPE_ALLTOALL(_alltoall32, sizeof(uint32_t))
 SHMEM_TYPE_ALLTOALL(_alltoall64, sizeof(uint64_t))
+SHMEM_TYPE_ALLTOALL_NB(_alltoall32_nb, sizeof(uint32_t))
+SHMEM_TYPE_ALLTOALL_NB(_alltoall64_nb, sizeof(uint64_t))
 SHMEM_TYPE_ALLTOALLS(_alltoalls32, sizeof(uint32_t))
 SHMEM_TYPE_ALLTOALLS(_alltoalls64, sizeof(uint64_t))
 

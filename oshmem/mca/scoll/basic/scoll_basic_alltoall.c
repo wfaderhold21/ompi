@@ -32,6 +32,20 @@ static int a2as_alg_simple(struct oshmem_group_t *group,
                            size_t nelems,
                            size_t element_size);
 
+int mca_scoll_basic_alltoall_nb(struct oshmem_group_t *group,
+                             void *target,
+                             const void *source,
+                             ptrdiff_t dst, ptrdiff_t sst,
+                             size_t nelems,
+                             size_t element_size,
+                             long *pSync,
+                             int alg,
+                             uint32_t tag,
+                             shmem_req_h * request)
+{
+    //TODO: fix to add request handling
+    return OSHMEM_SUCCESS;
+}
 
 int mca_scoll_basic_alltoall(struct oshmem_group_t *group,
                              void *target,

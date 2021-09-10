@@ -29,6 +29,7 @@
 #include "mpi.h"
 #include "oshmem/mca/mca.h"
 #include "opal/mca/base/base.h"
+#include "shmemx.h"
 
 BEGIN_C_DECLS
 
@@ -148,6 +149,17 @@ typedef int (*mca_scoll_base_module_alltoall_fn_t)(struct oshmem_group_t *group,
                                                   long *pSync,
                                                   int alg);
 
+typedef int (*mca_scoll_base_module_alltoall_nb_fn_t)(struct oshmem_group_t *group,
+                                                  void *target,
+                                                  const void *source,
+                                                  ptrdiff_t dst, ptrdiff_t sst,
+                                                  size_t nelems,
+                                                  size_t element_size,
+                                                  long *pSync,
+                                                  int alg,
+                                                  uint32_t tag,
+                                                  int * request);
+
 struct mca_scoll_base_module_1_0_0_t {
     /** Collective modules all inherit from opal_object */
     opal_object_t super;
@@ -158,6 +170,8 @@ struct mca_scoll_base_module_1_0_0_t {
     mca_scoll_base_module_collect_fn_t scoll_collect;
     mca_scoll_base_module_reduce_fn_t scoll_reduce;
     mca_scoll_base_module_alltoall_fn_t scoll_alltoall;
+    mca_scoll_base_module_alltoall_nb_fn_t scoll_alltoall_nb;
+
     mca_scoll_base_module_enable_1_0_0_fn_t scoll_module_enable;
 };
 typedef struct mca_scoll_base_module_1_0_0_t mca_scoll_base_module_1_0_0_t;
@@ -194,6 +208,8 @@ struct mca_scoll_base_group_scoll_t {
     mca_scoll_base_module_1_0_0_t *scoll_reduce_module;
     mca_scoll_base_module_alltoall_fn_t scoll_alltoall;
     mca_scoll_base_module_1_0_0_t *scoll_alltoall_module;
+    mca_scoll_base_module_alltoall_nb_fn_t scoll_alltoall_nb;
+    mca_scoll_base_module_1_0_0_t *scoll_alltoall_nb_module;
 };
 typedef struct mca_scoll_base_group_scoll_t mca_scoll_base_group_scoll_t;
 
