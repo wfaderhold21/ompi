@@ -35,6 +35,8 @@ static void mca_scoll_ucc_module_clear(mca_scoll_ucc_module_t *ucc_module)
     ucc_module->previous_reduce       = NULL;
     ucc_module->previous_collect      = NULL;
     ucc_module->previous_alltoall     = NULL;
+    ucc_module->previous_alltoall_nb  = NULL;
+    ucc_module->previous_broadcast_nb  = NULL;
 }
 
 static void mca_scoll_ucc_module_construct(mca_scoll_ucc_module_t *ucc_module)
@@ -100,6 +102,7 @@ static int mca_scoll_ucc_save_coll_handlers(mca_scoll_base_module_t *module,
     UCC_SAVE_PREV_SCOLL_API(reduce);
     UCC_SAVE_PREV_SCOLL_API(collect);
     UCC_SAVE_PREV_SCOLL_API(alltoall);
+    UCC_SAVE_PREV_SCOLL_API(alltoall_nb);
     return OSHMEM_SUCCESS;
 }
 
@@ -249,6 +252,7 @@ static int mca_scoll_ucc_init(oshmem_group_t *osh_group)
     }
 
     cm->libucc_initialized = true;
+    cm->nr_nb_colls = 0;
     return OSHMEM_SUCCESS;
 
 cleanup_lib:
@@ -347,11 +351,8 @@ int mca_scoll_ucc_team_create(mca_scoll_ucc_module_t *ucc_module,
     attr.mask = UCC_CONTEXT_ATTR_FIELD_WORK_BUFFER_SIZE;
     ucc_context_get_attr(cm->ucc_context, &attr);
     size = attr.global_work_buffer_size;
-    if (size & 0x7) {
-        size += 8 - (size & 0x7);
-    }
-    MCA_MEMHEAP_CALL(private_alloc(size * sizeof(long), (void **)&pSync));
-    memset(pSync, 0, size * sizeof(long));
+    MCA_MEMHEAP_CALL(private_alloc(SCOLL_UCC_NUM_OUTSTANDING * size * sizeof(long), (void **)&pSync));
+    memset(pSync, 0, SCOLL_UCC_NUM_OUTSTANDING * size * sizeof(long));
 
     map.type            = UCC_EP_MAP_ARRAY;
     map.ep_num          = osh_group->proc_count;
@@ -486,6 +487,7 @@ mca_scoll_ucc_comm_query(oshmem_group_t *osh_group, int *priority)
     SET_SCOLL_PTR(ucc_module, ALLREDUCE, reduce);
     SET_SCOLL_PTR(ucc_module, ALLGATHER, collect);
     SET_SCOLL_PTR(ucc_module, ALLTOALL, alltoall);
+    SET_SCOLL_PTR(ucc_module, ALLTOALL, alltoall_nb);
 
     module = &ucc_module->super;
     return module;

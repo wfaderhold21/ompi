@@ -53,6 +53,8 @@ mca_scoll_basic_query(struct oshmem_group_t *group, int *priority)
         module->super.scoll_collect = mca_scoll_basic_collect;
         module->super.scoll_reduce = mca_scoll_basic_reduce;
         module->super.scoll_alltoall = mca_scoll_basic_alltoall;
+        module->super.scoll_alltoall_nb = mca_scoll_basic_alltoall_nb;
+        module->super.scoll_broadcast_nb = mca_scoll_basic_broadcast_nb;
         module->super.scoll_module_enable = mca_scoll_basic_enable;
         return &(module->super);
     }

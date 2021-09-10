@@ -258,3 +258,17 @@ static int _algorithm_binomial_tree(struct oshmem_group_t *group,
 
     return rc;
 }
+
+int mca_scoll_basic_broadcast_nb(struct oshmem_group_t *group,
+                             int PE_root,
+                             void *target,
+                             const void *source,
+                             size_t nelems,
+                             long *pSync,
+                             bool nlong_types,
+                             int alg,
+                             shmem_req_h * request)
+{
+    //TODO: fix to add request handling
+    return OSHMEM_SUCCESS;
+}

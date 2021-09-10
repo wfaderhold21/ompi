@@ -29,6 +29,8 @@ BEGIN_C_DECLS
 
 #define SCOLL_UCC_CTS_STR "barrier,broadcast,reduce,collect,alltoall"
 
+
+#define SCOLL_UCC_NUM_OUTSTANDING 16
 int mca_scoll_ucc_progress(void);
 
 /**
@@ -48,6 +50,7 @@ struct mca_scoll_ucc_component_t {
     ucc_lib_h ucc_lib;
     ucc_lib_attr_t ucc_lib_attr;
     ucc_coll_type_t cts_requested;
+    int                         nr_nb_colls;
 };
 typedef struct mca_scoll_ucc_component_t mca_scoll_ucc_component_t;
 
@@ -74,6 +77,10 @@ struct mca_scoll_ucc_module_t {
     mca_scoll_base_module_t *previous_collect_module;
     mca_scoll_base_module_alltoall_fn_t previous_alltoall;
     mca_scoll_base_module_t *previous_alltoall_module;
+    mca_scoll_base_module_alltoall_nb_fn_t previous_alltoall_nb;
+    mca_scoll_base_module_t *previous_alltoall_nb_module;
+    mca_scoll_base_module_broadcast_nb_fn_t previous_broadcast_nb;
+    mca_scoll_base_module_t *previous_broadcast_nb_module;
 };
 typedef struct mca_scoll_ucc_module_t mca_scoll_ucc_module_t;
 
@@ -125,6 +132,26 @@ int mca_scoll_ucc_alltoall(struct oshmem_group_t *group,
                            size_t element_size,
                            long *pSync,
                            int alg);
+
+int mca_scoll_ucc_broadcast_nb(struct oshmem_group_t *group,
+                           int PE_root,
+                           void *target,
+                           const void *source,
+                           size_t nelems,
+                           long *pSync,
+                           bool nlong_type,
+                           int alg,
+                           shmem_req_h * req);
+int mca_scoll_ucc_alltoall_nb(struct oshmem_group_t *group,
+                           void *target,
+                           const void *source,
+                           ptrdiff_t dst, ptrdiff_t sst,
+                           size_t nelems,
+                           size_t element_size,
+                           long *pSync,
+                           int alg,
+                           shmem_req_h * req);
+
 
 END_C_DECLS
 

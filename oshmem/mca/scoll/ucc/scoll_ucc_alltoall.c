@@ -17,6 +17,7 @@ static inline ucc_status_t mca_scoll_ucc_alltoall_init(const void *sbuf, void *r
                                                        mca_scoll_ucc_module_t *ucc_module,
                                                        ucc_coll_req_h *req)
 {
+    mca_scoll_ucc_component_t *cm       = &mca_scoll_ucc_component;
     ucc_datatype_t dt;
 
     if (elem_size == 8) {
@@ -43,7 +44,7 @@ static inline ucc_status_t mca_scoll_ucc_alltoall_init(const void *sbuf, void *r
             .mem_type = UCC_MEMORY_TYPE_UNKNOWN
         },
         .flags = UCC_COLL_ARGS_FLAG_MEM_MAPPED_BUFFERS,
-        .global_work_buffer = ucc_module->pSync,
+        .global_work_buffer = &ucc_module->pSync[cm->nr_nb_colls % SCOLL_UCC_NUM_OUTSTANDING],
     };
 
     if (NULL == mca_scoll_ucc_component.ucc_context) {
@@ -100,4 +101,57 @@ fallback:
     PREVIOUS_SCOLL_FN(ucc_module, alltoall, group, target, source,
                       dst, sst, nelems, element_size, pSync, alg);
     return rc;
+}
+
+int scoll_ucc_nb_req_wait(void *ctx)
+{
+    ucc_coll_req_h request = (ucc_coll_req_h) ctx;
+    ucc_status_t status;
+
+    status = scoll_ucc_req_wait(request);
+    if (UCC_OK != status) {
+        return -1;
+    }
+    return 0;
+}
+
+
+
+int mca_scoll_ucc_alltoall_nb(struct oshmem_group_t *group,
+                           void *target,
+                           const void *source,
+                           ptrdiff_t dst, ptrdiff_t sst,
+                           size_t nelems,
+                           size_t element_size,
+                           long *pSync,
+                           int alg,
+                           shmem_req_h *request)
+{
+    mca_scoll_ucc_component_t *cm       = &mca_scoll_ucc_component;
+    mca_scoll_ucc_module_t *ucc_module;
+    size_t count;
+    ucc_coll_req_h req;
+
+    UCC_VERBOSE(3, "running ucc alltoall_nb");
+    ucc_module = (mca_scoll_ucc_module_t *) group->g_scoll.scoll_alltoall_nb_module;
+    count = nelems * element_size;
+
+    /* FIXME: incorrect semantics here */
+    /* Do nothing on zero-length request */
+    if (OPAL_UNLIKELY(!nelems)) {
+        return OSHMEM_SUCCESS;
+    }
+
+    ++cm->nr_nb_colls;
+    SCOLL_UCC_CHECK(mca_scoll_ucc_alltoall_init(source, target, count, element_size, ucc_module, &req));
+    SCOLL_UCC_CHECK(ucc_collective_post(req));
+    *request = malloc(sizeof(struct shmem_req));
+    (*request)->test = scoll_ucc_nb_req_test;
+    (*request)->wait = scoll_ucc_nb_req_wait;
+    (*request)->ctx = (void *) req; 
+    return OSHMEM_SUCCESS;
+fallback:
+    UCC_VERBOSE(3, "running fallback alltoall_nb");
+    return ucc_module->previous_alltoall_nb(group, target, source, dst, sst, nelems, 
+                                         element_size, pSync, alg, request);
 }

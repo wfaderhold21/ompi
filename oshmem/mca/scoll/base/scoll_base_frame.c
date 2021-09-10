@@ -48,6 +48,8 @@ static void scoll_base_module_construct(mca_scoll_base_module_t *m)
     m->scoll_collect = NULL;
     m->scoll_reduce = NULL;
     m->scoll_alltoall = NULL;
+    m->scoll_alltoall_nb = NULL;
+    m->scoll_broadcast_nb = NULL;
     m->scoll_module_enable = NULL;
 }
 
