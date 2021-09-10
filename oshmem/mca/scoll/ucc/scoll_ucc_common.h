@@ -20,6 +20,25 @@
                                        _module->ucc_team)); \
 } while(0)
 
+static inline int scoll_ucc_nb_req_test(shmem_req_h req)
+{
+    ucc_coll_req_h request = (ucc_coll_req_h) req->ctx;
+    ucc_status_t status;
+
+    status = ucc_collective_test(request);
+    if (UCC_OK != status) {
+        if (0 > status) {
+            UCC_ERROR("ucc_collective_test failed: %s", ucc_status_string(status));
+            return -1;
+        }
+        ucc_context_progress(mca_scoll_ucc_component.ucc_context);
+        opal_progress();
+        return 1;
+    }
+    ucc_collective_finalize(request);
+    return 0;
+}
+
 static inline ucc_status_t scoll_ucc_req_wait(ucc_coll_req_h req)
 {
     ucc_status_t status;
@@ -35,5 +54,6 @@ static inline ucc_status_t scoll_ucc_req_wait(ucc_coll_req_h req)
     return ucc_collective_finalize(req);
 }
 
+int scoll_ucc_nb_req_wait(void *ctx);
+
 #endif
- 

@@ -12,6 +12,8 @@
 #ifndef OSHMEM_SHMEMX_H
 #define OSHMEM_SHMEMX_H
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <shmem.h>
 
 #if defined(c_plusplus) || defined(__cplusplus)
@@ -195,6 +197,65 @@ OSHMEM_DECLSPEC void shmemx_int64_prod_to_all(int64_t *target, const int64_t *so
  *  @return            OSHMEM_SUCCESS or failure status.
  */
 OSHMEM_DECLSPEC void shmemx_alltoall_global_nb(void *dest, const void *source, size_t size, long *counter);
+
+#define SHMEM_REQ_INVALID   NULL
+
+struct shmem_req
+{
+    /* return the status of the request object. deallocate and set to
+     * SHMEM_REQ_INVALID if complete. negative on error, postive on progress */
+    int (*test)(void *ctx);
+    /* block and wait for collective completion. deallocate and set to
+     * SHMEM_REQ_INVALID when complete. negative on error, postive on progress */
+    int (*wait)(void *ctx);
+    /* object that contains all necessary resources for scoll component to
+     * complete the operation */
+    void *ctx;
+};
+typedef struct shmem_req * shmem_req_h;
+
+static inline int shmem_req_test(shmem_req_h *request)
+{
+    int ret;
+    if (*request == SHMEM_REQ_INVALID) {
+        return -1;
+    }
+    ret = (*request)->test(*request);
+    if (ret == 0) {
+        free(*request);
+        request = SHMEM_REQ_INVALID;
+    }
+    return ret;
+}
+
+static inline int shmem_req_wait(shmem_req_h *request)
+{
+    int ret;
+    if (*request == SHMEM_REQ_INVALID) {
+        return -1;
+    }
+    ret = (*request)->wait((*request)->ctx);
+    if (ret == 0) {
+        free(*request);
+        *request = SHMEM_REQ_INVALID;
+    }
+    return ret;
+}
+
+int shmemx_alltoall32_nb(void * dest, const void * source, size_t nelems, int pe_start, int logpe_stride, int pe_size, long * pSync, shmem_req_h *request);     
+int shmemx_alltoall64_nb(void * dest, const void * source, size_t nelems, int pe_start, int logpe_stride, int pe_size, long * pSync, shmem_req_h *request);     
+int shmemx_alltoall_nb(void * dest, const void * source, size_t nelems, int pe_start, int logpe_stride, int pe_size, long * pSync, shmem_req_h *request);     
+
+int shmemx_long_alltoall_nb(shmem_team_t team, long *dest, const long *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_alltoallmem_nb(shmem_team_t team, void *dest, const void *source,
+                          size_t nelems, shmem_req_h *request);
+
+
+int shmemx_long_broadcast_nb(shmem_team_t team, long *dest, const long *source,
+                             size_t nelems, int PE_root, shmem_req_h *request);
+int shmemx_long_broadcastmem_nb(shmem_team_t team, long *dest, const long *source,
+                                size_t nelems, int PE_root, shmem_req_h *request);
 
 /*
  * Backward compatibility section

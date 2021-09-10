@@ -84,3 +84,45 @@ fallback:
                       nlong, pSync, nlong_type, alg);
     return rc;
 }
+
+int mca_scoll_ucc_broadcast_nb(struct oshmem_group_t *group,
+                            int PE_root,
+                            void *target,
+                            const void *source,
+                            size_t nlong,
+                            long *pSync,
+                            bool nlong_type,
+                            int alg,
+                            shmem_req_h *request)
+{
+    mca_scoll_ucc_module_t * ucc_module;
+    void * buf;
+    ucc_coll_req_h req;
+    int rc;
+
+    UCC_VERBOSE(3, "running ucc bcast nb");
+    ucc_module = (mca_scoll_ucc_module_t *) group->g_scoll.scoll_broadcast_nb_module;
+    if (group->my_pe == PE_root) {
+        buf = (void *) source;
+    } else {
+        buf = target;
+    }
+
+    /* Do nothing on zero-length request */
+    if (OPAL_UNLIKELY(!nlong)) {
+        return OSHMEM_SUCCESS;
+    }
+
+    SCOLL_UCC_CHECK(mca_scoll_ucc_broadcast_init(buf, nlong, PE_root, ucc_module, &req));
+    SCOLL_UCC_CHECK(ucc_collective_post(req));
+    request = malloc(sizeof(struct shmem_req));
+    (*request)->test = scoll_ucc_nb_req_test;
+    (*request)->wait = scoll_ucc_nb_req_wait;
+    (*request)->ctx = (void *) req; 
+    return OSHMEM_SUCCESS;
+fallback:
+    UCC_VERBOSE(3, "running fallback bcast nb");
+    PREVIOUS_SCOLL_FN(ucc_module, broadcast_nb, group, PE_root, target, source,
+                      nlong, pSync, nlong_type, alg, request);
+    return rc;
+}

@@ -138,6 +138,41 @@ static int scoll_null_alltoall(struct oshmem_group_t *group,
     return OSHMEM_SUCCESS;
 }
 
+static int scoll_null_alltoall_nb(struct oshmem_group_t *group,
+                              void *target,
+                              const void *source,
+                              ptrdiff_t dst, ptrdiff_t sst,
+                              size_t nlong,
+                              size_t element_size,
+                              long *pSync,
+                              int alg,
+                              shmem_req_h * request)
+{
+    if (oshmem_proc_group_is_member(group)) {
+        SCOLL_ERROR("internal error");
+        oshmem_shmem_abort(-1);
+        return OSHMEM_ERROR;
+    }
+    return OSHMEM_SUCCESS;
+}
+
+static int scoll_null_broadcast_nb(struct oshmem_group_t *group,
+                              void *target,
+                              const void *source,
+                              size_t nlong,
+                              long *pSync,
+                              bool nlong_type,
+                              int alg,
+                              shmem_req_h * request)
+{
+    if (oshmem_proc_group_is_member(group)) {
+        SCOLL_ERROR("internal error");
+        oshmem_shmem_abort(-1);
+        return OSHMEM_ERROR;
+    }
+    return OSHMEM_SUCCESS;
+}
+
 /*
  * Stuff for the OBJ interface
  */
@@ -181,6 +216,8 @@ int mca_scoll_base_group_unselect(struct oshmem_group_t * group)
     CLOSE(group, collect);
     CLOSE(group, reduce);
     CLOSE(group, alltoall);
+    CLOSE(group, alltoall_nb);
+    CLOSE(group, broadcast_nb);
 
     /* All done */
     return OSHMEM_SUCCESS;
@@ -208,6 +245,8 @@ int mca_scoll_base_select(struct oshmem_group_t *group)
         group->g_scoll.scoll_collect = scoll_null_collect;
         group->g_scoll.scoll_reduce = scoll_null_reduce;
         group->g_scoll.scoll_alltoall = scoll_null_alltoall;
+        group->g_scoll.scoll_alltoall_nb = scoll_null_alltoall_nb;
+        group->g_scoll.scoll_broadcast_nb = scoll_null_broadcast_nb;
         return OSHMEM_SUCCESS;
     }
 
@@ -240,6 +279,8 @@ int mca_scoll_base_select(struct oshmem_group_t *group)
             COPY(avail->ac_module, group, collect);
             COPY(avail->ac_module, group, reduce);
             COPY(avail->ac_module, group, alltoall);
+            COPY(avail->ac_module, group, alltoall_nb);
+            COPY(avail->ac_module, group, broadcast_nb);
         }
         OBJ_RELEASE(avail->ac_module);
         OBJ_RELEASE(avail);
@@ -253,7 +294,9 @@ int mca_scoll_base_select(struct oshmem_group_t *group)
             || (NULL == group->g_scoll.scoll_broadcast)
             || (NULL == group->g_scoll.scoll_collect)
             || (NULL == group->g_scoll.scoll_reduce)
-            || (NULL == group->g_scoll.scoll_alltoall)) {
+            || (NULL == group->g_scoll.scoll_alltoall)
+            || (NULL == group->g_scoll.scoll_alltoall_nb)
+            || (NULL == group->g_scoll.scoll_broadcast_nb)) {
         mca_scoll_base_group_unselect(group);
         return OSHMEM_ERR_NOT_FOUND;
     }

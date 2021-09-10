@@ -87,6 +87,27 @@ int mca_scoll_basic_alltoall(struct oshmem_group_t *group,
                              long *pSync,
                              int alg);
 
+int mca_scoll_basic_alltoall_nb(struct oshmem_group_t *group,
+                             void *target,
+                             const void *source,
+                             ptrdiff_t dst, ptrdiff_t sst,
+                             size_t nelems,
+                             size_t element_size,
+                             long *pSync,
+                             int alg,
+                             shmem_req_h * request);
+int mca_scoll_basic_broadcast_nb(struct oshmem_group_t *group,
+                             int PE_root,
+                             void *target,
+                             const void *source,
+                             size_t nelems,
+                             long *pSync,
+                             bool nlong_type,
+                             int alg,
+                             shmem_req_h * request);
+
+
+
 static inline unsigned int scoll_log2(unsigned long val)
 {
     unsigned int count = 0;
