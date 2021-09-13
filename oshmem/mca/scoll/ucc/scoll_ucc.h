@@ -73,6 +73,8 @@ struct mca_scoll_ucc_module_t {
     mca_scoll_base_module_t *previous_collect_module;
     mca_scoll_base_module_alltoall_fn_t previous_alltoall;
     mca_scoll_base_module_t *previous_alltoall_module;
+    mca_scoll_base_module_alltoall_nb_fn_t previous_alltoall_nb;
+    mca_scoll_base_module_t *previous_alltoall_nb_module;
 };
 typedef struct mca_scoll_ucc_module_t mca_scoll_ucc_module_t;
 
@@ -119,6 +121,18 @@ int mca_scoll_ucc_alltoall(struct oshmem_group_t *group,
                            size_t element_size,
                            long *pSync,
                            int alg);
+
+int mca_scoll_ucc_alltoall_nb(struct oshmem_group_t *group,
+                           void *target,
+                           const void *source,
+                           ptrdiff_t dst, ptrdiff_t sst,
+                           size_t nelems,
+                           size_t element_size,
+                           long *pSync,
+                           int alg,
+                           uint32_t tag,
+                           shmem_req_h * req);
+
 
 END_C_DECLS
 

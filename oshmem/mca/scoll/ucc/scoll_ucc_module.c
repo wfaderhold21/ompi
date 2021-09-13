@@ -40,6 +40,7 @@ static void mca_scoll_ucc_module_clear(mca_scoll_ucc_module_t *ucc_module)
     ucc_module->previous_reduce       = NULL;
     ucc_module->previous_collect      = NULL;
     ucc_module->previous_alltoall     = NULL;
+    ucc_module->previous_alltoall_nb  = NULL;
 }
 
 static void mca_scoll_ucc_module_construct(mca_scoll_ucc_module_t *ucc_module)
@@ -100,6 +101,7 @@ static int mca_scoll_ucc_save_coll_handlers(mca_scoll_base_module_t *module,
     UCC_SAVE_PREV_SCOLL_API(reduce);
     UCC_SAVE_PREV_SCOLL_API(collect);
     UCC_SAVE_PREV_SCOLL_API(alltoall);
+    UCC_SAVE_PREV_SCOLL_API(alltoall_nb);
     return OSHMEM_SUCCESS;
 }
 
@@ -303,8 +305,14 @@ int conn_info_lookup(void * conn_ctx,
             p[rank][i].va_base = memheap_map->mem_segs[i].mkeys[0].va_base;
             p[rank][i].packed_key = memheap_map->mem_segs[i].mkeys[0].u.data;
         } else {
+            ompi_proc_t * proc = oshmem_proc_find(rank);
+
             p[rank][i].va_base = memheap_map->mem_segs[i].mkeys_cache[rank]->va_base; 
-            p[rank][i].packed_key = memheap_map->mem_segs[i].mkeys_cache[rank]->u.data;
+            if ((proc->super.proc_flags & OPAL_PROC_NON_LOCAL)) {
+                p[rank][i].packed_key = ucx_ctx->ucp_peers[rank].mkeys[i].key.rkey;
+            } else {
+                p[rank][i].packed_key = memheap_map->mem_segs[i].mkeys_cache[rank]->u.data;
+            }
         }
         p[rank][i].len = (ptrdiff_t) memheap_map->mem_segs[i].super.va_end - 
                          (ptrdiff_t) memheap_map->mem_segs[i].super.va_base;
@@ -473,6 +481,7 @@ mca_scoll_ucc_comm_query(oshmem_group_t *osh_group, int *priority)
     SET_SCOLL_PTR(ucc_module, ALLREDUCE, reduce);
     SET_SCOLL_PTR(ucc_module, ALLGATHER, collect);
     SET_SCOLL_PTR(ucc_module, ALLTOALL, alltoall);
+    SET_SCOLL_PTR(ucc_module, ALLTOALL, alltoall_nb);
 
     UCC_VERBOSE(5, "ucc returning success");
     module = &ucc_module->super;

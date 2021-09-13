@@ -201,6 +201,24 @@ OSHMEM_DECLSPEC void shmemx_int64_prod_to_all(int64_t *target, const int64_t *so
  */
 OSHMEM_DECLSPEC void shmemx_alltoall_global_nb(void *dest, const void *source, size_t size, long *counter);
 
+struct shmem_req
+{
+    int (*test)(void * ctx);
+    void * ctx;
+};
+typedef struct shmem_req * shmem_req_h;
+
+static inline int shmem_req_test(shmem_req_h request)
+{
+    return request->test(request);
+}
+
+        
+
+int shmemx_alltoall32_nb(void * dest, const void * source, size_t nelems, int pe_start, int logpe_stride, int pe_size, long * pSync, uint32_t tag, shmem_req_h *request);     
+int shmemx_alltoall64_nb(void * dest, const void * source, size_t nelems, int pe_start, int logpe_stride, int pe_size, long * pSync, uint32_t tag, shmem_req_h *request);     
+int shmemx_alltoall_nb(void * dest, const void * source, size_t nelems, int pe_start, int logpe_stride, int pe_size, long * pSync, uint32_t tag, shmem_req_h *request);     
+
 /*
  * Backward compatibility section
  */

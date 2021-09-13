@@ -86,3 +86,58 @@ fallback:
                                          element_size, pSync, alg);
 }
 
+int req_test(shmem_req_h req)
+{
+    ucc_coll_req_h request = (ucc_coll_req_h) req->ctx;
+    ucc_status_t status;
+
+    status = ucc_collective_test(request);
+    if (UCC_OK != status) {
+        if (0 > status) {
+            UCC_ERROR("ucc_collective_test failed: %s", ucc_status_string(status));
+            return -1;
+        }
+        ucc_context_progress(mca_scoll_ucc_component.ucc_context);
+        opal_progress();
+        return 0;
+    }
+    ucc_collective_finalize(request);
+    return 1;
+}
+
+
+int mca_scoll_ucc_alltoall_nb(struct oshmem_group_t *group,
+                           void *target,
+                           const void *source,
+                           ptrdiff_t dst, ptrdiff_t sst,
+                           size_t nelems,
+                           size_t element_size,
+                           long *pSync,
+                           int alg,
+                           uint32_t tag,
+                           shmem_req_h * request)
+{
+    mca_scoll_ucc_module_t *ucc_module;
+    size_t count;
+    ucc_coll_req_h req;
+
+    UCC_VERBOSE(3, "running ucc alltoall_nb");
+    ucc_module = (mca_scoll_ucc_module_t *) group->g_scoll.scoll_alltoall_nb_module;
+    count = nelems * element_size;
+
+    /* Do nothing on zero-length request */
+    if (OPAL_UNLIKELY(!nelems)) {
+        return OSHMEM_SUCCESS;
+    }
+
+    SCOLL_UCC_CHECK(mca_scoll_ucc_alltoall_init(source, target, count, element_size, ucc_module, &req));
+    SCOLL_UCC_CHECK(ucc_collective_post(req));
+    (*request)->test = req_test;
+    (*request)->ctx = (void *) req; 
+    return OSHMEM_SUCCESS;
+fallback:
+    UCC_VERBOSE(3, "running fallback alltoall_nb");
+    return ucc_module->previous_alltoall_nb(group, target, source, dst, sst, nelems, 
+                                         element_size, pSync, alg, tag, request);
+}
+
