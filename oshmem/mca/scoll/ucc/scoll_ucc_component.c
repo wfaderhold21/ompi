@@ -63,7 +63,7 @@ mca_scoll_ucc_component_t mca_scoll_ucc_component = {
     "basic",            /* cls */
     SCOLL_UCC_CTS_STR,  /* cts */
     0,                  /* nr_modules */
-    false               /* libucc_initialized */
+    0               /* libucc_initialized */
 };
 
 static int ucc_register(void)
@@ -162,7 +162,7 @@ static int ucc_open(void)
 {
     mca_scoll_ucc_component_t *cm;
     cm = &mca_scoll_ucc_component;
-    cm->libucc_initialized = false;
+    cm->libucc_state = SCOLL_UCC_UNINITIALIZED;
 
     mca_scoll_ucc_output = opal_output_open(NULL);
     opal_output_set_verbosity(mca_scoll_ucc_output, cm->ucc_verbose);

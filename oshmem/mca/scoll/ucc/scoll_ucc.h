@@ -31,6 +31,12 @@ BEGIN_C_DECLS
 
 int mca_scoll_ucc_progress(void);
 
+#define SCOLL_UCC_UNINITIALIZED     0
+#define SCOLL_UCC_REG_PROGRESS      1
+#define SCOLL_UCC_INITIALIZED       2
+
+int mca_scoll_ucc_init_ctx(oshmem_group_t *osh_group);
+
 /**
  * Globally exported structure
  */
@@ -43,7 +49,7 @@ struct mca_scoll_ucc_component_t {
     char * cls;
     char * cts;
     int nr_modules;
-    bool libucc_initialized;
+    int libucc_state;
     ucc_lib_h ucc_lib;
     ucc_lib_attr_t ucc_lib_attr;
     ucc_coll_type_t cts_requested;

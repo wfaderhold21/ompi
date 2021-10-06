@@ -55,6 +55,11 @@ static inline ucc_status_t mca_scoll_ucc_reduce_init(const void *sbuf, void *rbu
         coll.flags = UCC_COLL_ARGS_FLAG_IN_PLACE;
     }
 
+    if (mca_scoll_ucc_component.libucc_state < SCOLL_UCC_INITIALIZED) {
+        if (OSHMEM_ERROR == mca_scoll_ucc_init_ctx(ucc_module->group)) {
+            return OSHMEM_ERROR;
+        }
+    }
     if (ucc_module->ucc_team == NULL) {
         if (OSHMEM_ERROR == mca_scoll_ucc_team_create(ucc_module, ucc_module->group)) {
             return OSHMEM_ERROR;
