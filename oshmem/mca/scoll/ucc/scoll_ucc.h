@@ -67,6 +67,7 @@ struct mca_scoll_ucc_module_t {
 
     oshmem_group_t             *group;
     ucc_team_h                  ucc_team;
+    long *                      pSync;
     
     /* Saved handlers - for fallback */
     mca_scoll_base_module_reduce_fn_t previous_reduce;

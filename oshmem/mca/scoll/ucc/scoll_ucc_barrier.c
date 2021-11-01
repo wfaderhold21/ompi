@@ -18,19 +18,26 @@ static inline ucc_status_t mca_scoll_ucc_barrier_init(mca_scoll_ucc_module_t * u
 {
     ucc_coll_args_t coll = {
         .mask = 0,
-        .coll_type = UCC_COLL_TYPE_BARRIER
+        .coll_type = UCC_COLL_TYPE_BARRIER,
+//        .pSync = pSync
     };
-    coll.src.info.buffer = pSync;
 
+    double start, end;
     if (mca_scoll_ucc_component.libucc_state < SCOLL_UCC_INITIALIZED) {
+        start = MPI_Wtime();
         if (OSHMEM_ERROR == mca_scoll_ucc_init_ctx(ucc_module->group)) {
             return OSHMEM_ERROR;
         }
+        end = MPI_Wtime();
+        printf("context create time: %0.5f\n", end - start);
     }
     if (ucc_module->ucc_team == NULL) {
+        start = MPI_Wtime();
         if (OSHMEM_ERROR == mca_scoll_ucc_team_create(ucc_module, ucc_module->group)) {
             return OSHMEM_ERROR;
         }
+        end = MPI_Wtime();
+        printf("team create time: %0.5f\n", end - start);
     }
 
     SCOLL_UCC_REQ_INIT(req, coll, ucc_module);
@@ -50,8 +57,6 @@ int mca_scoll_ucc_barrier(struct oshmem_group_t *group, long *pSync, int alg)
     SCOLL_UCC_CHECK(mca_scoll_ucc_barrier_init(ucc_module, pSync, &req));
     SCOLL_UCC_CHECK(ucc_collective_post(req));
     SCOLL_UCC_CHECK(scoll_ucc_req_wait(req));
-
-    pSync[0] = pSync[1] = SHMEM_SYNC_VALUE;
 
     return OSHMEM_SUCCESS;
 fallback:

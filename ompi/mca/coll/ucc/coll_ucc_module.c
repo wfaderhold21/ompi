@@ -342,10 +342,6 @@ static int mca_coll_ucc_module_enable(mca_coll_base_module_t *module,
             .coll_info      = (void*)comm,
             .n_oob_eps      = ompi_comm_size(comm),
             .oob_ep         = ompi_comm_rank(comm)
-<<<<<<< HEAD
-=======
-//            .participants   = ompi_comm_size(comm)
->>>>>>> dcb9b5b179... Update p2p to current proposed UCC approach
         },
         .ep       = ompi_comm_rank(comm),
         .ep_range = UCC_COLLECTIVE_EP_RANGE_CONTIG

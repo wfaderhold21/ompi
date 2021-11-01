@@ -61,6 +61,7 @@ static void mca_scoll_ucc_module_destruct(mca_scoll_ucc_module_t *ucc_module)
     bool team_removed = false;
     if (ucc_module->ucc_team) {
         ucc_team_destroy(ucc_module->ucc_team);
+        MCA_MEMHEAP_CALL(private_free(ucc_module->pSync));
         --mca_scoll_ucc_component.nr_modules;
         team_removed = true;
     }
@@ -201,7 +202,7 @@ int mca_scoll_ucc_init_ctx(oshmem_group_t *osh_group)
     ucc_thread_mode_t              tm_requested;
     ucc_lib_params_t               lib_params;
     ucc_context_params_t           ctx_params;
-    ucc_mem_map_t              *maps;
+    ucc_mem_map_t                  *maps;
 
     if (memheap_map) {
         maps = (ucc_mem_map_t *) malloc(sizeof(ucc_mem_map_t) * memheap_map->n_segments);
@@ -256,8 +257,6 @@ int mca_scoll_ucc_init_ctx(oshmem_group_t *osh_group)
         for (int i = 0; i < memheap_map->n_segments; i++) {
             maps[i].address = memheap_map->mem_segs[i].mkeys[0].va_base;
             maps[i].len = (ptrdiff_t) memheap_map->mem_segs[i].super.va_end - (ptrdiff_t) memheap_map->mem_segs[i].super.va_base;
-            maps[i].hints = 0;
-            maps[i].constraints = 0;
         }
         ctx_params.mem_params.maps = maps;
         ctx_params.mem_params.n_maps = memheap_map->n_segments;
@@ -349,13 +348,20 @@ int mca_scoll_ucc_team_create(mca_scoll_ucc_module_t *ucc_module,
 {
     mca_scoll_ucc_component_t *cm         = &mca_scoll_ucc_component;
     ucc_status_t               status     = UCC_OK;
-    
+    long * pSync;
+    size_t size;
+    ucc_context_attr_t          attr;
+
+    attr.mask = UCC_CONTEXT_ATTR_FIELD_WORK_BUFFER_SIZE;
+    ucc_context_get_attr(cm->ucc_context, &attr);
+    size = attr.global_work_buffer_size;
+
+    MCA_MEMHEAP_CALL(private_alloc(size, (void **)&pSync));
 
     ucc_team_params_t team_params = {
         .mask             = UCC_TEAM_PARAM_FIELD_EP | 
                             UCC_TEAM_PARAM_FIELD_EP_RANGE |
-                            UCC_TEAM_PARAM_FIELD_OOB |
-                            UCC_TEAM_PARAM_FIELD_MEM_PARAMS,
+                            UCC_TEAM_PARAM_FIELD_OOB, 
         .oob = {
             .allgather    = oob_allgather,
             .req_test     = oob_allgather_test,
@@ -380,6 +386,7 @@ int mca_scoll_ucc_team_create(mca_scoll_ucc_module_t *ucc_module,
         UCC_ERROR("ucc_team_create_test failed (%d)", status);
         goto err;
     }
+    ucc_module->pSync = pSync;
 
     ++cm->nr_modules;
     return OSHMEM_SUCCESS;
