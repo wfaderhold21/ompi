@@ -13,7 +13,7 @@
 #include <ucc/api/ucc.h>
 
 static inline ucc_status_t mca_scoll_ucc_broadcast_init(void * buf, int count,
-                                                        int root, 
+                                                        int root, long * pSync,
                                                         mca_scoll_ucc_module_t * ucc_module,
                                                         ucc_coll_req_h * req)
 {
@@ -26,7 +26,8 @@ static inline ucc_status_t mca_scoll_ucc_broadcast_init(void * buf, int count,
             .count = count,
             .datatype = UCC_DT_INT8,
             .mem_type = UCC_MEMORY_TYPE_UNKNOWN
-        }
+        },
+        .global_work_buffer = pSync,
     };
 
     if (mca_scoll_ucc_component.libucc_state < SCOLL_UCC_INITIALIZED) {
@@ -73,7 +74,7 @@ int mca_scoll_ucc_broadcast(struct oshmem_group_t *group,
         return OSHMEM_SUCCESS;
     }
 
-    SCOLL_UCC_CHECK(mca_scoll_ucc_broadcast_init(buf, nlong, PE_root, ucc_module, &req));
+    SCOLL_UCC_CHECK(mca_scoll_ucc_broadcast_init(buf, nlong, PE_root, pSync, ucc_module, &req));
     SCOLL_UCC_CHECK(ucc_collective_post(req));
     SCOLL_UCC_CHECK(scoll_ucc_req_wait(req));
     return OSHMEM_SUCCESS;

@@ -258,8 +258,8 @@ int mca_scoll_ucc_init_ctx(oshmem_group_t *osh_group)
             maps[i].address = memheap_map->mem_segs[i].mkeys[0].va_base;
             maps[i].len = (ptrdiff_t) memheap_map->mem_segs[i].super.va_end - (ptrdiff_t) memheap_map->mem_segs[i].super.va_base;
         }
-        ctx_params.mem_params.maps = maps;
-        ctx_params.mem_params.n_maps = memheap_map->n_segments;
+        ctx_params.mem_params.segments = maps;
+        ctx_params.mem_params.n_segments = memheap_map->n_segments;
     }
 
     if (UCC_OK != ucc_context_config_read(cm->ucc_lib, NULL, &ctx_config)) {

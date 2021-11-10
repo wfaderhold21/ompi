@@ -19,25 +19,26 @@ static inline ucc_status_t mca_scoll_ucc_barrier_init(mca_scoll_ucc_module_t * u
     ucc_coll_args_t coll = {
         .mask = 0,
         .coll_type = UCC_COLL_TYPE_BARRIER,
+        .global_work_buffer = pSync,
 //        .pSync = pSync
     };
 
-    double start, end;
+//    double start, end;
     if (mca_scoll_ucc_component.libucc_state < SCOLL_UCC_INITIALIZED) {
-        start = MPI_Wtime();
+//        start = MPI_Wtime();
         if (OSHMEM_ERROR == mca_scoll_ucc_init_ctx(ucc_module->group)) {
             return OSHMEM_ERROR;
         }
-        end = MPI_Wtime();
-        printf("context create time: %0.5f\n", end - start);
+    //    end = MPI_Wtime();
+    //    printf("context create time: %0.5f\n", end - start);
     }
     if (ucc_module->ucc_team == NULL) {
-        start = MPI_Wtime();
+    //    start = MPI_Wtime();
         if (OSHMEM_ERROR == mca_scoll_ucc_team_create(ucc_module, ucc_module->group)) {
             return OSHMEM_ERROR;
         }
-        end = MPI_Wtime();
-        printf("team create time: %0.5f\n", end - start);
+    //    end = MPI_Wtime();
+   //     printf("team create time: %0.5f\n", end - start);
     }
 
     SCOLL_UCC_REQ_INIT(req, coll, ucc_module);
