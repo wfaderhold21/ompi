@@ -31,6 +31,10 @@ BEGIN_C_DECLS
 
 int mca_scoll_ucc_progress(void);
 
+#define SCOLL_UCC_UNINITIALIZED     0
+#define SCOLL_UCC_REG_PROGRESS      1
+#define SCOLL_UCC_INITIALIZED       2
+
 /**
  * Globally exported structure
  */
@@ -43,7 +47,7 @@ struct mca_scoll_ucc_component_t {
     char * cls;
     char * cts;
     int nr_modules;
-    bool libucc_initialized;
+    int libucc_state;
     ucc_lib_h ucc_lib;
     ucc_lib_attr_t ucc_lib_attr;
     ucc_coll_type_t cts_requested;
@@ -61,6 +65,7 @@ struct mca_scoll_ucc_module_t {
 
     oshmem_group_t             *group;
     ucc_team_h                  ucc_team;
+    long                       *pSync;
     
     /* Saved handlers - for fallback */
     mca_scoll_base_module_reduce_fn_t previous_reduce;
@@ -80,6 +85,9 @@ OBJ_CLASS_DECLARATION(mca_scoll_ucc_module_t);
 
 /* API functions */
 int mca_scoll_ucc_init_query(bool enable_progress_threads, bool enable_mpi_threads);
+int mca_scoll_ucc_init_ctx(oshmem_group_t *osh_group);
+int mca_scoll_ucc_team_create(mca_scoll_ucc_module_t *ucc_module, 
+                              oshmem_group_t         *osh_group);
 
 mca_scoll_base_module_t* mca_scoll_ucc_comm_query(oshmem_group_t *osh_group, int *priority);
 
