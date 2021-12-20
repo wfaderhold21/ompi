@@ -147,22 +147,29 @@ static inline ucc_status_t oob_probe_test(oob_allgather_req_t *oob_req)
 static ucc_status_t oob_allgather_test(void *req)
 {
     oob_allgather_req_t *oob_req   = (oob_allgather_req_t*) req;
-    ompi_communicator_t *comm      = (ompi_communicator_t *) oob_req->oob_coll_ctx;  
+    oshmem_group_t *group = (oshmem_group_t *) oob_req->oob_coll_ctx;
     char                *tmpsend   = NULL;
     char                *tmprecv   = NULL;
     size_t                msglen   = oob_req->msglen;
-    int rank, size, sendto, recvfrom, recvdatafrom, senddatafrom;
+    int rank, size, sendto, recvfrom, recvdatafrom, senddatafrom, index = 0;
 
-    rank = ompi_comm_rank(comm);
-    size = ompi_comm_size(comm);
+    rank = group->my_pe;
+    size = group->proc_count;
+    for (; index < size; index++) {
+        if (rank == group->proc_vpids[index]) {
+            break;
+        }
+    }
 
     if (0 == oob_req->iter) {
-        tmprecv = (char *)oob_req->rbuf + (ptrdiff_t)rank * (ptrdiff_t)msglen;
+        tmprecv = (char *)oob_req->rbuf + (ptrdiff_t)index * (ptrdiff_t)msglen;
         memcpy(tmprecv, oob_req->sbuf, msglen);
     }
 
-    sendto   = (rank + 1) % size;
-    recvfrom = (rank - 1 + size) % size;
+    sendto = (index + 1) % size;
+    recvfrom = (index - 1 + size) % size;
+    sendto   = group->proc_vpids[sendto];
+    recvfrom = group->proc_vpids[recvfrom];
 
     for (; oob_req->iter < size - 1; oob_req->iter++) {
         if (oob_req->iter > 0) {
@@ -171,14 +178,14 @@ static ucc_status_t oob_allgather_test(void *req)
             }
         }
 
-        recvdatafrom = (rank - oob_req->iter - 1 + size) % size;
-        senddatafrom = (rank - oob_req->iter + size) % size;
+        recvdatafrom = (index - oob_req->iter - 1 + size) % size;
+        senddatafrom = (index - oob_req->iter + size) % size;
         tmprecv = (char *) oob_req->rbuf + (ptrdiff_t) recvdatafrom * (ptrdiff_t) msglen;
         tmpsend = (char *) oob_req->rbuf + (ptrdiff_t) senddatafrom * (ptrdiff_t) msglen;
         MCA_PML_CALL(isend(tmpsend, msglen, MPI_BYTE, sendto, MCA_COLL_BASE_TAG_UCC,
-                     MCA_PML_BASE_SEND_STANDARD, comm, &oob_req->reqs[0]));
+                     MCA_PML_BASE_SEND_STANDARD, oshmem_comm_world, &oob_req->reqs[0]));
         MCA_PML_CALL(irecv(tmprecv, msglen, MPI_BYTE, recvfrom, 
-                     MCA_COLL_BASE_TAG_UCC, comm, &oob_req->reqs[1]));
+                     MCA_COLL_BASE_TAG_UCC, oshmem_comm_world, &oob_req->reqs[1]));
     }
     return oob_probe_test(oob_req);
 }
@@ -238,9 +245,9 @@ int mca_scoll_ucc_init_ctx(oshmem_group_t *osh_group)
         ctx_params.oob.allgather = oob_allgather;
         ctx_params.oob.req_test = oob_allgather_test;
         ctx_params.oob.req_free = oob_allgather_free;
-        ctx_params.oob.coll_info = (void *) oshmem_comm_world;
-        ctx_params.oob.n_oob_eps = ompi_comm_size(oshmem_comm_world);
-        ctx_params.oob.oob_ep = ompi_comm_rank(oshmem_comm_world);
+        ctx_params.oob.coll_info = (void *) oshmem_group_all; //oshmem_comm_world;
+        ctx_params.oob.n_oob_eps = oshmem_group_all->proc_count;//ompi_comm_size(oshmem_comm_world);
+        ctx_params.oob.oob_ep = oshmem_group_all->my_pe;//ompi_comm_rank(oshmem_comm_world);
         for (int i = 0; i < memheap_map->n_segments; i++) {
             maps[i].address = memheap_map->mem_segs[i].mkeys[0].va_base;
             maps[i].len = (ptrdiff_t) memheap_map->mem_segs[i].super.va_end
@@ -296,6 +303,9 @@ int mca_scoll_ucc_team_create(mca_scoll_ucc_module_t *ucc_module,
 {
     mca_scoll_ucc_component_t *cm = &mca_scoll_ucc_component;
     ucc_status_t           status = UCC_OK;
+    ucc_ep_map_t            map;
+    long * pe_array;
+    int index;
     long             *pSync;
     size_t             size;
     ucc_context_attr_t attr;
@@ -304,8 +314,24 @@ int mca_scoll_ucc_team_create(mca_scoll_ucc_module_t *ucc_module,
     ucc_context_get_attr(cm->ucc_context, &attr);
     size = attr.global_work_buffer_size;
 
+    if (size & 0x7) { 
+        size += 8 - (size & 0x7);
+    }
+
     MCA_MEMHEAP_CALL(private_alloc(size, (void **) &pSync));
 
+    map.type = UCC_EP_MAP_ARRAY;
+    map.ep_num = osh_group->proc_count;
+    pe_array = malloc(sizeof(uint64_t) * osh_group->proc_count);
+    map.array.elem_size = 8;
+    index = -1;
+    for (int i = 0; i < osh_group->proc_count; i++) {
+        pe_array[i] = osh_group->proc_vpids[i];
+        if (osh_group->proc_vpids[i] == osh_group->my_pe) {
+            index = i;
+        }
+    }
+    map.array.map = (void *) pe_array;
     ucc_team_params_t team_params = {
         .mask             = UCC_TEAM_PARAM_FIELD_EP | 
                             UCC_TEAM_PARAM_FIELD_EP_RANGE |
@@ -315,17 +341,18 @@ int mca_scoll_ucc_team_create(mca_scoll_ucc_module_t *ucc_module,
             .allgather    = oob_allgather,
             .req_test     = oob_allgather_test,
             .req_free     = oob_allgather_free,
-            .coll_info    = (void *)osh_group->ompi_comm,
-            .n_oob_eps    = ompi_comm_size(osh_group->ompi_comm),
-            .oob_ep       = ompi_comm_rank(osh_group->ompi_comm),
+            .coll_info    = (void *)osh_group,
+            .n_oob_eps    = osh_group->proc_count,
+            .oob_ep       = index,
         },
-        .ep       = ompi_comm_rank(osh_group->ompi_comm),
-        .ep_range = UCC_COLLECTIVE_EP_RANGE_CONTIG,
+        .ep       = index,
+        .ep_map   = map,
         .flags    = UCC_TEAM_FLAG_COLL_WORK_BUFFER,
     };
 
     if (UCC_OK != ucc_team_create_post(&cm->ucc_context, 1, &team_params, &ucc_module->ucc_team)) {
         UCC_ERROR("ucc_team_create_post failed");
+        goto err;
     }
 
     while (UCC_INPROGRESS == (status = ucc_team_create_test(ucc_module->ucc_team))) {
