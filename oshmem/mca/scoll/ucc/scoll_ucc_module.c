@@ -184,8 +184,7 @@ static ucc_status_t oob_allgather_test_ctx(void *req)
 
     sendto   = (rank + 1) % size;
     recvfrom = (rank - 1 + size) % size;
-/* TODO: start here */
-    return  
+    return oob_allgather_test_common(oob_req, rank, size, sendto, recvfrom); 
 }
 
 static ucc_status_t oob_allgather_test(void *req)
@@ -291,7 +290,7 @@ static int mca_scoll_ucc_init_ctx(oshmem_group_t *osh_group)
         ctx_params.mem_params.segments = maps;
         ctx_params.mem_params.n_segments = memheap_map->n_segments;
         ctx_params.oob.allgather = oob_allgather;
-        ctx_params.oob.req_test = oob_allgather_test_ompi;
+        ctx_params.oob.req_test = oob_allgather_test_ctx;
         ctx_params.oob.req_free = oob_allgather_free;
         ctx_params.oob.coll_info = (void *) oshmem_comm_world;
         ctx_params.oob.n_oob_eps = ompi_comm_size(oshmem_comm_world);
