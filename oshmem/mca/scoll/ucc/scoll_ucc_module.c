@@ -269,11 +269,15 @@ int mca_scoll_ucc_init_ctx(oshmem_group_t *osh_group)
         UCC_ERROR("failed to allocate space for UCC memory params");
     }
     for (segment = 0; segment < memheap_map->n_segments; segment++) {
+        maps[segment].mask = UCC_MEM_MAP_FIELD_KEY | UCC_MEM_MAP_FIELD_ADDRESS;
         maps[segment].address = memheap_map->mem_segs[segment].mkeys[0].va_base;
         maps[segment].len =
             (ptrdiff_t)memheap_map->mem_segs[segment].super.va_end -
             (ptrdiff_t)memheap_map->mem_segs[segment].super.va_base;
+        maps[segment].key[0].key = memheap_map->mem_segs[segment].mkeys[0].u.data;
+        maps[segment].key[0].key_len = memheap_map->mem_segs[segment].mkeys[0].len;
     }
+
     ctx_params.mask =
         UCC_CONTEXT_PARAM_FIELD_OOB | UCC_CONTEXT_PARAM_FIELD_MEM_PARAMS;
     ctx_params.oob.allgather         = oob_allgather;
