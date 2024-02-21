@@ -9,6 +9,9 @@
 
 #include "coll_ucc_common.h"
 
+static int mapped = 0;
+static long * pSync;
+
 static inline ucc_status_t mca_coll_ucc_alltoall_init(const void *sbuf, int scount, struct ompi_datatype_t *sdtype,
                                                       void* rbuf, int rcount, struct ompi_datatype_t *rdtype,
                                                       mca_coll_ucc_module_t *ucc_module,
@@ -17,6 +20,7 @@ static inline ucc_status_t mca_coll_ucc_alltoall_init(const void *sbuf, int scou
 {
     ucc_datatype_t         ucc_sdt, ucc_rdt;
     int comm_size = ompi_comm_size(ucc_module->comm);
+    ucc_mem_map_t *map;
 
     if (!ompi_datatype_is_contiguous_memory_layout(sdtype, scount * comm_size) ||
         !ompi_datatype_is_contiguous_memory_layout(rdtype, rcount * comm_size)) {
@@ -24,16 +28,9 @@ static inline ucc_status_t mca_coll_ucc_alltoall_init(const void *sbuf, int scou
     }
     ucc_sdt = ompi_dtype_to_ucc_dtype(sdtype);
     ucc_rdt = ompi_dtype_to_ucc_dtype(rdtype);
-    if (COLL_UCC_DT_UNSUPPORTED == ucc_sdt ||
-        COLL_UCC_DT_UNSUPPORTED == ucc_rdt) {
-        UCC_VERBOSE(5, "ompi_datatype is not supported: dtype = %s",
-                    (COLL_UCC_DT_UNSUPPORTED == ucc_sdt) ?
-                    sdtype->super.name : rdtype->super.name);
-        goto fallback;
-    }
 
     ucc_coll_args_t coll = {
-        .mask      = 0,
+        .mask = 0,
         .coll_type = UCC_COLL_TYPE_ALLTOALL,
         .src.info = {
             .buffer   = (void*)sbuf,
@@ -46,8 +43,41 @@ static inline ucc_status_t mca_coll_ucc_alltoall_init(const void *sbuf, int scou
             .count    = rcount * comm_size,
             .datatype = ucc_rdt,
             .mem_type = UCC_MEMORY_TYPE_UNKNOWN
-        }
+        },
     };
+
+    if (COLL_UCC_DT_UNSUPPORTED == ucc_sdt ||
+        COLL_UCC_DT_UNSUPPORTED == ucc_rdt) {
+        UCC_VERBOSE(5, "ompi_datatype is not supported: dtype = %s",
+                    (COLL_UCC_DT_UNSUPPORTED == ucc_sdt) ?
+                    sdtype->super.name : rdtype->super.name);
+        goto fallback;
+    }
+
+    if (!mapped) {
+        map = (ucc_mem_map_t *)calloc(2, sizeof(ucc_mem_map_t));
+        pSync = (long *)calloc(1,sizeof(long));
+
+        map[0].address = rbuf;
+        map[0].len = rcount * comm_size;
+        map[0].resource = NULL;
+
+        map[1].address = pSync;
+        map[1].len = sizeof(long);
+        map[1].resource = NULL;
+
+        coll.mask = UCC_COLL_ARGS_FIELD_FLAGS | UCC_COLL_ARGS_FIELD_MEM_MAP;
+        coll.flags = UCC_COLL_ARGS_FLAG_MEM_MAPPED_BUFFERS;
+        coll.mem_map.n_segments = 2;
+        coll.mem_map.segments = map;
+        mapped = 1;
+    }
+
+    if (mapped) {
+        coll.mask |= UCC_COLL_ARGS_FIELD_FLAGS | UCC_COLL_ARGS_FIELD_GLOBAL_WORK_BUFFER;
+        coll.flags |= UCC_COLL_ARGS_FLAG_MEM_MAPPED_BUFFERS;
+        coll.global_work_buffer = pSync;
+    }
 
     if (MPI_IN_PLACE == sbuf) {
         coll.mask  = UCC_COLL_ARGS_FIELD_FLAGS;
