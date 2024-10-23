@@ -219,7 +219,7 @@ struct mca_scoll_base_group_scoll_t {
     mca_scoll_base_module_1_0_0_t *scoll_alltoall_module;
     mca_scoll_base_module_alltoall_nb_fn_t scoll_alltoall_nb;
     mca_scoll_base_module_1_0_0_t *scoll_alltoall_nb_module;
-    mca_scoll_base_module_broadcast_fn_t scoll_broadcast_nb;
+    mca_scoll_base_module_broadcast_nb_fn_t scoll_broadcast_nb;
     mca_scoll_base_module_1_0_0_t *scoll_broadcast_nb_module;
 
 };

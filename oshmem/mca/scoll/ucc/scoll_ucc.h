@@ -142,6 +142,7 @@ int mca_scoll_ucc_broadcast_nb(struct oshmem_group_t *group,
                            bool nlong_type,
                            int alg,
                            shmem_req_h * req);
+
 int mca_scoll_ucc_alltoall_nb(struct oshmem_group_t *group,
                            void *target,
                            const void *source,
@@ -151,7 +152,6 @@ int mca_scoll_ucc_alltoall_nb(struct oshmem_group_t *group,
                            long *pSync,
                            int alg,
                            shmem_req_h * req);
-
 
 END_C_DECLS
 

@@ -115,7 +115,7 @@ int mca_scoll_ucc_broadcast_nb(struct oshmem_group_t *group,
 
     SCOLL_UCC_CHECK(mca_scoll_ucc_broadcast_init(buf, nlong, PE_root, ucc_module, &req));
     SCOLL_UCC_CHECK(ucc_collective_post(req));
-    request = malloc(sizeof(struct shmem_req));
+    *request = malloc(sizeof(struct shmem_req));
     (*request)->test = scoll_ucc_nb_req_test;
     (*request)->wait = scoll_ucc_nb_req_wait;
     (*request)->ctx = (void *) req; 

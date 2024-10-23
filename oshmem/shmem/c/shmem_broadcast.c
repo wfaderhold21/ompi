@@ -30,6 +30,16 @@ static void _shmem_broadcast(void *target,
                               int PE_size,
                               long *pSync);
 
+static int _shmem_broadcast_nb(void *target,
+                              const void *source,
+                              size_t nbytes,
+                              int PE_root,
+                              int PE_start,
+                              int logPE_stride,
+                              int PE_size,
+                              long *pSync,
+                              shmem_req_h *req);
+
 #define SHMEM_TYPE_BROADCAST(name, element_size)                    \
     void shmem##name( void *target,                                 \
                       const void *source,                           \
@@ -47,6 +57,43 @@ static void _shmem_broadcast(void *target,
     _shmem_broadcast( target, source, nelems * element_size,        \
                        PE_root, PE_start, logPE_stride, PE_size,    \
                        pSync);                                      \
+}
+
+#define SHMEM_TYPE_BROADCAST_NB(name, element_size)                 \
+    int shmem##name( void *target,                                 \
+                      const void *source,                           \
+                      size_t nelems,                                \
+                      int PE_root,                                  \
+                      int PE_start,                                 \
+                      int logPE_stride,                             \
+                      int PE_size,                                  \
+                      long *pSync,                                  \
+                      shmem_req_h *req)                             \
+{                                                                   \
+    RUNTIME_CHECK_INIT();                                           \
+    RUNTIME_CHECK_ADDR_SIZE(target, nelems);                        \
+    RUNTIME_CHECK_ADDR_SIZE(source, nelems);                        \
+                                                                    \
+    return _shmem_broadcast_nb( target, source, nelems * element_size,     \
+                       PE_root, PE_start, logPE_stride, PE_size,    \
+                       pSync, req);                                 \
+}
+
+#define SHMEM_TEAM_TYPE_BROADCAST_NB(name, element_size)                 \
+    int shmem##name(shmem_team_t team, \
+                    void *target,                                 \
+                    const void *source,                           \
+                    size_t nelems,                                \
+                    int PE_root,                                  \
+                      shmem_req_h *req)                             \
+{                                                                   \
+    RUNTIME_CHECK_INIT();                                           \
+    RUNTIME_CHECK_ADDR_SIZE(target, nelems);                        \
+    RUNTIME_CHECK_ADDR_SIZE(source, nelems);                        \
+                                                                    \
+    return _shmem_broadcast_nb( target, source, nelems * element_size,     \
+                       PE_root,     \
+                       NULL, req);                                 \
 }
 
 static void _shmem_broadcast(void *target,
@@ -85,6 +132,51 @@ out:
         oshmem_proc_group_destroy(group);
         RUNTIME_CHECK_RC(rc);
     }
+}
+
+static int _shmem_broadcast_nb(void *target,
+                              const void *source,
+                              size_t nbytes,
+                              int PE_root,
+                              int PE_start,
+                              int logPE_stride,
+                              int PE_size,
+                              long *pSync,
+                              shmem_req_h *req)
+{
+    int rc = -1; /* check this in spec */
+    oshmem_group_t *group;
+
+    /* Create group basing PE_start, logPE_stride and PE_size */
+    group = oshmem_proc_group_create_nofail(PE_start, 1 << logPE_stride, PE_size);
+
+    /* Define actual PE using relative in active set */
+    PE_root = oshmem_proc_pe_vpid(group, PE_root);
+
+    /* Call collective broadcast operation */
+    rc = group->g_scoll.scoll_broadcast_nb(group,
+                                        PE_root,
+                                        target,
+                                        source,
+                                        nbytes,
+                                        pSync,
+                                        true,
+                                        SCOLL_DEFAULT_ALG,
+                                        req);
+out:
+        oshmem_proc_group_destroy(group);
+        RUNTIME_CHECK_RC(rc);
+    return rc;
+}
+
+int shmemx_broadcastmem_nb(shmem_team_t team,
+                           void *target,
+                           const void *source,
+                           size_t nbytes,
+                           int PE_root,
+                           shmem_req_h *req)
+{
+    return _shmem_broadcast_nb(target, source, nbytes, PE_root, 0, 0, oshmem_group_all->proc_count, NULL, req);
 }
 
 #if OSHMEM_PROFILING
