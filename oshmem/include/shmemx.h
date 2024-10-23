@@ -254,7 +254,7 @@ int shmemx_alltoallmem_nb(shmem_team_t team, void *dest, const void *source,
 
 int shmemx_long_broadcast_nb(shmem_team_t team, long *dest, const long *source,
                              size_t nelems, int PE_root, shmem_req_h *request);
-int shmemx_long_broadcastmem_nb(shmem_team_t team, long *dest, const long *source,
+int shmemx_broadcastmem_nb(shmem_team_t team, void *dest, const void *source,
                                 size_t nelems, int PE_root, shmem_req_h *request);
 
 /*
