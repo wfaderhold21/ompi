@@ -17,8 +17,10 @@ static inline ucc_status_t mca_scoll_ucc_broadcast_init(void * buf, int count,
                                                         mca_scoll_ucc_module_t * ucc_module,
                                                         ucc_coll_req_h * req)
 {
+    mca_scoll_ucc_component_t *cm       = &mca_scoll_ucc_component;
+
     ucc_coll_args_t coll = {
-        .mask = 0,
+        .mask = UCC_COLL_ARGS_FIELD_FLAGS | UCC_COLL_ARGS_FIELD_GLOBAL_WORK_BUFFER,
         .coll_type = UCC_COLL_TYPE_BCAST,
         .root = root,
         .src.info = {
@@ -26,7 +28,9 @@ static inline ucc_status_t mca_scoll_ucc_broadcast_init(void * buf, int count,
             .count = count,
             .datatype = UCC_DT_INT8,
             .mem_type = UCC_MEMORY_TYPE_UNKNOWN
-        }
+        },
+        .flags = UCC_COLL_ARGS_FLAG_MEM_MAPPED_BUFFERS,
+        .global_work_buffer = &ucc_module->pSync[cm->nr_nb_colls % SCOLL_UCC_NUM_OUTSTANDING],
     };
 
     if (NULL == mca_scoll_ucc_component.ucc_context) {
@@ -95,6 +99,7 @@ int mca_scoll_ucc_broadcast_nb(struct oshmem_group_t *group,
                             int alg,
                             shmem_req_h *request)
 {
+    mca_scoll_ucc_component_t *cm       = &mca_scoll_ucc_component;
     mca_scoll_ucc_module_t * ucc_module;
     void * buf;
     ucc_coll_req_h req;
@@ -113,6 +118,7 @@ int mca_scoll_ucc_broadcast_nb(struct oshmem_group_t *group,
         return OSHMEM_SUCCESS;
     }
 
+    ++cm->nr_nb_colls;
     SCOLL_UCC_CHECK(mca_scoll_ucc_broadcast_init(buf, nlong, PE_root, ucc_module, &req));
     SCOLL_UCC_CHECK(ucc_collective_post(req));
     *request = malloc(sizeof(struct shmem_req));
