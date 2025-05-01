@@ -115,8 +115,6 @@ int scoll_ucc_nb_req_wait(void *ctx)
     return 0;
 }
 
-
-
 int mca_scoll_ucc_alltoall_nb(struct oshmem_group_t *group,
                            void *target,
                            const void *source,
@@ -134,7 +132,7 @@ int mca_scoll_ucc_alltoall_nb(struct oshmem_group_t *group,
 
     UCC_VERBOSE(3, "running ucc alltoall_nb");
     ucc_module = (mca_scoll_ucc_module_t *) group->g_scoll.scoll_alltoall_nb_module;
-    count = nelems * element_size;
+    count = nelems;
 
     /* FIXME: incorrect semantics here */
     /* Do nothing on zero-length request */

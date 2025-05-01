@@ -242,15 +242,81 @@ static inline int shmem_req_wait(shmem_req_h *request)
     return ret;
 }
 
-int shmemx_alltoall32_nb(void * dest, const void * source, size_t nelems, int pe_start, int logpe_stride, int pe_size, long * pSync, shmem_req_h *request);     
-int shmemx_alltoall64_nb(void * dest, const void * source, size_t nelems, int pe_start, int logpe_stride, int pe_size, long * pSync, shmem_req_h *request);     
+int shmemx_alltoall32_nb(shmem_team_t team, void *dest, const void *source, size_t nelems, shmem_req_h *request);
+int shmemx_alltoall64_nb(shmem_team_t team, void *dest, const void *source, size_t nelems, shmem_req_h *request);
 int shmemx_alltoall_nb(void * dest, const void * source, size_t nelems, int pe_start, int logpe_stride, int pe_size, long * pSync, shmem_req_h *request);     
 
+int shmemx_char_alltoall_nb(shmem_team_t team, char *dest, const char *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_short_alltoall_nb(shmem_team_t team, short *dest, const short *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_int_alltoall_nb(shmem_team_t team, int *dest, const int *source,
+                            size_t nelems, shmem_req_h *request);
 int shmemx_long_alltoall_nb(shmem_team_t team, long *dest, const long *source,
                             size_t nelems, shmem_req_h *request);
+int shmemx_float_alltoall_nb(shmem_team_t team, float *dest, const float *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_double_alltoall_nb(shmem_team_t team, double *dest, const double *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_longlong_alltoall_nb(shmem_team_t team, long long *dest, const long long *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_schar_alltoall_nb(shmem_team_t team, signed char *dest, const signed char *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_uchar_alltoall_nb(shmem_team_t team, unsigned char *dest, const unsigned char *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_ushort_alltoall_nb(shmem_team_t team, unsigned short *dest, const unsigned short *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_uint_alltoall_nb(shmem_team_t team, unsigned int *dest, const unsigned int *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_ulong_alltoall_nb(shmem_team_t team, unsigned long *dest, const unsigned long *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_ulonglong_alltoall_nb(shmem_team_t team, unsigned long long *dest, const unsigned long long *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_longdouble_alltoall_nb(shmem_team_t team, long double *dest, const long double *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_int8_alltoall_nb(shmem_team_t team, int8_t *dest, const int8_t *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_int16_alltoall_nb(shmem_team_t team, int16_t *dest, const int16_t *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_int32_alltoall_nb(shmem_team_t team, int32_t *dest, const int32_t *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_int64_alltoall_nb(shmem_team_t team, int64_t *dest, const int64_t *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_uint8_alltoall_nb(shmem_team_t team, uint8_t *dest, const uint8_t *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_uint16_alltoall_nb(shmem_team_t team, uint16_t *dest, const uint16_t *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_uint32_alltoall_nb(shmem_team_t team, uint32_t *dest, const uint32_t *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_uint64_alltoall_nb(shmem_team_t team, uint64_t *dest, const uint64_t *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_size_alltoall_nb(shmem_team_t team, size_t *dest, const size_t *source,
+                            size_t nelems, shmem_req_h *request);
+int shmemx_ptrdiff_alltoall_nb(shmem_team_t team, ptrdiff_t *dest, const ptrdiff_t *source,
+                            size_t nelems, shmem_req_h *request);
+
 int shmemx_alltoallmem_nb(shmem_team_t team, void *dest, const void *source,
                           size_t nelems, shmem_req_h *request);
 
+#if OSHMEM_HAVE_C11
+#define shmem_alltoall_nb(...)                                             \
+    _Generic(&*(__OSHMEM_VAR_ARG2(__VA_ARGS__)),                        \
+            char*:        shmem_char_alltoall_nb,               	        \
+            short*:       shmem_short_alltoall_nb,              	        \
+            int*:         shmem_int_alltoall_nb,                	        \
+            long*:        shmem_long_alltoall_nb,               	        \
+            long long*:   shmem_longlong_alltoall_nb,           	        \
+            signed char*:        shmem_schar_alltoall_nb,       	        \
+            unsigned char*:      shmem_uchar_alltoall_nb,       	        \
+            unsigned short*:     shmem_ushort_alltoall_nb,      	        \
+            unsigned int*:       shmem_uint_alltoall_nb,        	        \
+            unsigned long*:      shmem_ulong_alltoall_nb,       	        \
+            unsigned long long*: shmem_ulonglong_alltoall_nb,   	        \
+            float*:       shmem_float_alltoall_nb,              	        \
+            double*:      shmem_double_alltoall_nb,             	        \
+            long double*: shmem_longdouble_alltoall_nb,         	        \
+            default:      __oshmem_datatype_ignore)(__VA_ARGS__)
+#endif
 
 int shmemx_long_broadcast_nb(shmem_team_t team, long *dest, const long *source,
                              size_t nelems, int PE_root, shmem_req_h *request);

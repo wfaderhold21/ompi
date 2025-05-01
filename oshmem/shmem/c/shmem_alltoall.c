@@ -44,8 +44,6 @@ static int _shmem_alltoall_nb(void *target,
                             long *pSync,
                             shmem_req_h * req);
 
-
-
 #define SHMEM_TYPE_ALLTOALL(name, element_size)                      \
     void shmem##name(void *target,                                   \
                      const void *source,                             \
@@ -262,10 +260,25 @@ int shmemx_alltoallmem_nb(shmem_team_t team,
 
 SHMEM_TYPE_ALLTOALL(_alltoall32, sizeof(uint32_t))
 SHMEM_TYPE_ALLTOALL(_alltoall64, sizeof(uint64_t))
-SHMEM_TYPE_ALLTOALL_NB(_alltoall32_nb, sizeof(uint32_t))
-SHMEM_TYPE_ALLTOALL_NB(_alltoall64_nb, sizeof(uint64_t))
+SHMEM_TEAM_TYPE_ALLTOALL_NB(_alltoall32_nb, sizeof(uint32_t))
+SHMEM_TEAM_TYPE_ALLTOALL_NB(_alltoall64_nb, sizeof(uint64_t))
 SHMEM_TYPE_ALLTOALLS(_alltoalls32, sizeof(uint32_t))
 SHMEM_TYPE_ALLTOALLS(_alltoalls64, sizeof(uint64_t))
+
+#define SHMEM_TYPE_TEAM_ALLTOALL_NB(type_name, type, code, postfix)    \
+    int  shmemx##type_name##postfix(shmem_team_t team, type *dest, const type *source, size_t nelems, shmem_req_h *req)   \
+    {                                                               \
+        int rc = 0;                                                 \
+                                                                     \
+    RUNTIME_CHECK_INIT();                                            \
+    RUNTIME_CHECK_ADDR_SIZE(dest, nelems);                         \
+    RUNTIME_CHECK_ADDR_SIZE(source, nelems);                         \
+                                                                     \
+    return _shmem_alltoall_nb(dest, source, 1, 1, nelems, sizeof(type),   \
+                       0, 0, oshmem_group_all->proc_count,           \
+                       NULL, req);                                  \
+        return rc;                                                  \
+    }
 
 
 
@@ -310,6 +323,32 @@ SHMEM_TYPE_TEAM_ALLTOALL(_size, size_t, SHMEM_SIZE_T, _alltoall)
 SHMEM_TYPE_TEAM_ALLTOALL(_ptrdiff, ptrdiff_t, SHMEM_PTRDIFF_T, _alltoall)
 
 SHMEM_TYPE_TEAM_ALLTOALL(, void, SHMEM_BYTE, _alltoallmem)
+
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_char, char, SHMEM_CHAR, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_short, short, SHMEM_SHORT, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_int, int, SHMEM_INT, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_long, long, SHMEM_LONG, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_float, float, SHMEM_FLOAT, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_double, double, SHMEM_DOUBLE, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_longlong, long long, SHMEM_LLONG, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_schar, signed char, SHMEM_SCHAR, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_uchar, unsigned char, SHMEM_UCHAR, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_ushort, unsigned short, SHMEM_USHORT, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_uint, unsigned int, SHMEM_UINT, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_ulong, unsigned long, SHMEM_ULONG, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_ulonglong, unsigned long long, SHMEM_ULLONG, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_longdouble, long double, SHMEM_LDOUBLE, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_int8, int8_t, SHMEM_INT8_T, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_int16, int16_t, SHMEM_INT16_T, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_int32, int32_t, SHMEM_INT32_T, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_int64, int64_t, SHMEM_INT64_T, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_uint8, uint8_t, SHMEM_UINT8_T, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_uint16, uint16_t, SHMEM_UINT16_T, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_uint32, uint32_t, SHMEM_UINT32_T, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_uint64, uint64_t, SHMEM_UINT64_T, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_size, size_t, SHMEM_SIZE_T, _alltoall_nb)
+SHMEM_TYPE_TEAM_ALLTOALL_NB(_ptrdiff, ptrdiff_t, SHMEM_PTRDIFF_T, _alltoall_nb)
+
 
 
 #define SHMEM_TYPE_TEAM_ALLTOALLS(type_name, type, code, postfix)   \
