@@ -218,6 +218,46 @@ int shmemx_broadcastmem_nb(shmem_team_t team,
 SHMEM_TYPE_BROADCAST(_broadcast32, sizeof(uint32_t))
 SHMEM_TYPE_BROADCAST(_broadcast64, sizeof(uint64_t))
 
+#define SHMEM_TYPE_TEAM_BROADCAST_NB(type_name, type, code, postfix)    \
+    int  shmemx##type_name##postfix(shmem_team_t team, type *dest, const type *source, size_t nelems, int PE_root, shmem_req_h *req)   \
+    {                                                               \
+        RUNTIME_CHECK_INIT();                                       \
+        RUNTIME_CHECK_ADDR_SIZE(dest, nelems);                      \
+        RUNTIME_CHECK_ADDR_SIZE(source, nelems);                    \
+                                                                    \
+        return _shmem_broadcast_nb(dest, source,                    \
+                                   nelems * sizeof(type),           \
+                                   PE_root, 0, 0, oshmem_group_all->proc_count,                        \
+                                   NULL, req);                      \
+                                                                    \
+    }
+
+
+SHMEM_TYPE_TEAM_BROADCAST_NB(_char, char, SHMEM_CHAR, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_short, short, SHMEM_SHORT, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_int, int, SHMEM_INT, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_long, long, SHMEM_LONG, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_float, float, SHMEM_FLOAT, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_double, double, SHMEM_DOUBLE, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_longlong, long long, SHMEM_LLONG, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_schar, signed char, SHMEM_SCHAR, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_uchar, unsigned char, SHMEM_UCHAR, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_ushort, unsigned short, SHMEM_USHORT, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_uint, unsigned int, SHMEM_UINT, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_ulong, unsigned long, SHMEM_ULONG, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_ulonglong, unsigned long long, SHMEM_ULLONG, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_longdouble, long double, SHMEM_LDOUBLE, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_int8, int8_t, SHMEM_INT8_T, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_int16, int16_t, SHMEM_INT16_T, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_int32, int32_t, SHMEM_INT32_T, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_int64, int64_t, SHMEM_INT64_T, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_uint8, uint8_t, SHMEM_UINT8_T, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_uint16, uint16_t, SHMEM_UINT16_T, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_uint32, uint32_t, SHMEM_UINT32_T, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_uint64, uint64_t, SHMEM_UINT64_T, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_size, size_t, SHMEM_SIZE_T, _broadcast_nb)
+SHMEM_TYPE_TEAM_BROADCAST_NB(_ptrdiff, ptrdiff_t, SHMEM_PTRDIFF_T, _broadcast_nb)
+
 
 
 #define SHMEM_TYPE_TEAM_BROADCAST(type_name, type, code, postfix)    \
