@@ -17,7 +17,8 @@ sources = \
 	scoll_basic_broadcast.c \
 	scoll_basic_collect.c \
 	scoll_basic_reduce.c \
-	scoll_basic_alltoall.c
+	scoll_basic_alltoall.c \
+	scoll_basic_broadcast_nb.c
 
 
 # Make the output library in this directory, and name it either

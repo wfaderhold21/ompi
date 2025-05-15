@@ -66,6 +66,7 @@ mca_spml_ucx_t mca_spml_ucx = {
         .spml_send          = mca_spml_ucx_send,
         .spml_fence         = mca_spml_ucx_fence,
         .spml_quiet         = mca_spml_ucx_quiet,
+        .spml_quiet_nb      = mca_spml_ucx_quiet_nb,
         .spml_rmkey_unpack  = mca_spml_ucx_rmkey_unpack,
         .spml_rmkey_free    = mca_spml_ucx_rmkey_free,
         .spml_rmkey_ptr     = mca_spml_ucx_rmkey_ptr,
@@ -1495,6 +1496,55 @@ int mca_spml_ucx_quiet(shmem_ctx_t ctx)
                  oshmem_shmem_abort(-1);
                  return ret;
             }
+        }
+    }
+
+    /* If put_all_nb op/s is/are being executed asynchronously, need to wait its
+     * completion as well. */
+    if (ctx == oshmem_ctx_default) {
+        while (mca_spml_ucx.aux_refcnt) {
+            opal_progress();
+        }
+    }
+
+    ucx_ctx->nb_progress_cnt = 0;
+
+    return OSHMEM_SUCCESS;
+}
+
+int mca_spml_ucx_quiet_nb(shmem_ctx_t ctx, void **handle)
+{
+    int ret;
+    unsigned i;
+    mca_spml_ucx_ctx_t *ucx_ctx = (mca_spml_ucx_ctx_t *)ctx;
+    ucp_request_param_t param;
+    void *req;
+
+    if (ucx_ctx->synchronized_quiet) {
+        ret = mca_spml_ucx_strong_sync(ctx);
+        if (ret != OSHMEM_SUCCESS) {
+            oshmem_shmem_abort(-1);
+            return ret;
+        }
+    }
+
+    opal_atomic_wmb();
+
+    /* Use the first worker for the non-blocking flush */
+    if (ucx_ctx->ucp_worker[0] != NULL) {
+        param.op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK;
+        param.cb.send = NULL;  /* No callback needed */
+ 
+        req = ucp_worker_flush_nbx(ucx_ctx->ucp_worker[0], &param);
+        if (UCS_PTR_IS_ERR(req)) {
+            return OSHMEM_ERROR;
+        }
+ 
+        if (UCS_PTR_IS_PTR(req)) {
+            *handle = req;
+        } else {
+            /* Immediate completion */
+            *handle = NULL;
         }
     }
 

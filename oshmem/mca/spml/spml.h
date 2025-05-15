@@ -1001,6 +1001,17 @@ typedef int (*mca_spml_base_module_fence_fn_t)(shmem_ctx_t ctx);
 typedef int (*mca_spml_base_module_quiet_fn_t)(shmem_ctx_t ctx);
 
 /**
+ * Non-blocking version of quiet. Flushes outstanding put() requests without blocking.
+ * The operation can be tested for completion using wait_nb.
+ *
+ * @param ctx      - The context object this routine is working on.
+ * @param handle   - The address of a handle to be passed to wait_nb() or test_nb()
+ *                  to wait or poll for the completion of the flush.
+ * @return         - OSHMEM_SUCCESS or failure status.
+ */
+typedef int (*mca_spml_base_module_quiet_nb_fn_t)(shmem_ctx_t ctx, void **handle);
+
+/**
  * Waits for completion of a non-blocking put or get issued by the calling PE.
  *
  * @return         - OSHMEM_SUCCESS or failure status.
@@ -1080,6 +1091,7 @@ struct mca_spml_base_module_1_0_0_t {
 
     mca_spml_base_module_fence_fn_t spml_fence;
     mca_spml_base_module_quiet_fn_t spml_quiet;
+    mca_spml_base_module_quiet_nb_fn_t spml_quiet_nb;
 
     mca_spml_base_module_mkey_unpack_fn_t spml_rmkey_unpack;
     mca_spml_base_module_mkey_free_fn_t   spml_rmkey_free;

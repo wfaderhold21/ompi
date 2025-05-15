@@ -137,6 +137,13 @@ int mca_spml_base_wait_nb(void* handle)
     return OSHMEM_SUCCESS;
 }
 
+int mca_spml_base_quiet_nb(shmem_ctx_t ctx, void **handle)
+{
+    /* Default implementation just calls blocking quiet */
+    MCA_SPML_CALL(quiet_nb(ctx, handle));
+    return OSHMEM_SUCCESS;
+}
+
 int mca_spml_base_oob_get_mkeys(shmem_ctx_t ctx, int pe, uint32_t segno, sshmem_mkey_t *mkeys)
 {
     return OSHMEM_ERROR;
