@@ -405,6 +405,8 @@ static inline void mca_spml_ucx_remote_op_posted(mca_spml_ucx_ctx_t *ctx, int ds
 #define MCA_SPML_UCX_CTXS_ARRAY_SIZE 64
 #define MCA_SPML_UCX_CTXS_ARRAY_INC 64
 
+int mca_spml_ucx_quiet_nb(shmem_ctx_t ctx, void **handle);
+
 END_C_DECLS
 
 #endif
