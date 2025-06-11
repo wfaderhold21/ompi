@@ -118,6 +118,12 @@ int mca_scoll_basic_broadcast_nb(struct oshmem_group_t *group,
         return rc;
     }
 
+    if (!module->pSync) {
+        MCA_MEMHEAP_CALL(private_alloc(2 * SCOLL_BASIC_NUM_OUTSTANDING * sizeof(long), (void **)&module->pSync));
+        for (int i = 0; i < (2 * SCOLL_BASIC_NUM_OUTSTANDING); i++) {
+            module->pSync[i] = -1;
+        }
+    }
     /* Create the non-blocking collective operation */
     coll = calloc(1, sizeof(nb_coll_t));
     if (NULL == coll) {

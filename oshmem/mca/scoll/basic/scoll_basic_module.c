@@ -69,7 +69,6 @@ int mca_scoll_basic_init(bool enable_progress_threads, bool enable_threads)
         /* Detach the thread since we don't need to join it */
         pthread_detach(thread);
     }
- 
     return OSHMEM_SUCCESS;
 }
 
@@ -81,6 +80,7 @@ int mca_scoll_basic_init(bool enable_progress_threads, bool enable_threads)
 static int mca_scoll_basic_enable(mca_scoll_base_module_t *module,
                                   struct oshmem_group_t *comm)
 {
+    mca_scoll_basic_module_t    *basic_module = (mca_scoll_basic_module_t *) module;
     /*nothing to do here*/
     return OSHMEM_SUCCESS;
 }
@@ -131,7 +131,6 @@ mca_scoll_base_module_t *
 mca_scoll_basic_query(struct oshmem_group_t *group, int *priority)
 {
     mca_scoll_basic_module_t *module;
-    long *pSync;
 
     *priority = mca_scoll_basic_priority_param;
 
@@ -146,9 +145,7 @@ mca_scoll_basic_query(struct oshmem_group_t *group, int *priority)
         module->super.scoll_broadcast_nb = mca_scoll_basic_broadcast_nb;
         module->super.scoll_module_enable = mca_scoll_basic_enable;
 
-        /*MCA_MEMHEAP_CALL(private_alloc(2 * SCOLL_BASIC_NUM_OUTSTANDING * sizeof(long), (void **)&pSync));
-        memset(pSync, 0, 2 * SCOLL_BASIC_NUM_OUTSTANDING * sizeof(long));*/
-        module->pSync = pSync;
+        module->pSync = NULL;
         module->nr_colls = 0;
 
         return &(module->super);
@@ -206,6 +203,7 @@ void * progress_thread(void *args)
  
         if (ctx->status == SHMEM_NB_COLL_BLOCKED) {
             ctx->status = SHMEM_NB_COLL_RUNNING;
+
             ret = nb->start(nb->args.group,
                           nb->args.target,
                           nb->args.source,

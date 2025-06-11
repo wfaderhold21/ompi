@@ -149,17 +149,19 @@ int basic_alltoall_nb_progress(struct oshmem_group_t *group,
 
     /* Progress the SPML component */
     opal_progress();
-    rc = MCA_SPML_CALL(quiet(oshmem_ctx_default));
-    if (rc != OSHMEM_SUCCESS) {
-        nb_ctx->status = SHMEM_NB_COLL_ERROR;
-        return rc;
-    }
 
     SCOLL_VERBOSE(14, "[#%d] Wait for operation completion", group->my_pe);
     rc = BARRIER_FUNC(group, pSync, SCOLL_DEFAULT_ALG);
     if (rc != OSHMEM_SUCCESS) {
         nb_ctx->status = SHMEM_NB_COLL_ERROR;
         return rc;
+    }
+    /* Restore initial values */
+    SCOLL_VERBOSE(12, "PE#%d Restore special synchronization array",
+                  group->my_pe);
+
+    for (int i = 0; pSync && (i < _SHMEM_ALLTOALL_SYNC_SIZE); i++) {
+        pSync[i] = _SHMEM_SYNC_VALUE;
     }
     /* If we get here, the operation is complete */
     nb_ctx->status = SHMEM_NB_COLL_COMPLETE;
@@ -190,14 +192,6 @@ int basic_alltoall_nb_start(struct oshmem_group_t *group,
     dst_blk_idx = oshmem_proc_group_find_id(group, group->my_pe);
     dst_blk = get_stride_elem(target, 1, nelems, element_size, dst_blk_idx, 0);
 
-    /* Allocate array to store handles */
-    handles = calloc(group->proc_count, sizeof(void *));
-    if (handles == NULL) {
-        nb_ctx->status = SHMEM_NB_COLL_ERROR;
-        return OSHMEM_ERR_OUT_OF_RESOURCE;
-    }
-    nb->handles = handles;  /* Store handles array in coll structure */
-
     /* Issue non-blocking puts to all PEs */
     for (src_blk_idx = 0; src_blk_idx < group->proc_count; src_blk_idx++) {
         dst_pe = get_dst_pe(group, src_blk_idx, dst_blk_idx, &dst_pe_idx);
@@ -205,9 +199,8 @@ int basic_alltoall_nb_start(struct oshmem_group_t *group,
                                 nelems * element_size,
                                 get_stride_elem(source, 1, nelems,
                                                 element_size, dst_pe_idx, 0),
-                                dst_pe, &handles[src_blk_idx]));
+                                dst_pe, NULL));
         if (OSHMEM_SUCCESS != rc) {
-            free(handles);
             nb_ctx->status = SHMEM_NB_COLL_ERROR;
             return rc;
         }
@@ -237,6 +230,12 @@ int mca_scoll_basic_alltoall_nb(struct oshmem_group_t *group,
         return rc;
     }
 
+    if (!module->pSync) {
+        MCA_MEMHEAP_CALL(private_alloc(2 * SCOLL_BASIC_NUM_OUTSTANDING * sizeof(long), (void **)&module->pSync));
+        for (int i = 0; i < (2 * SCOLL_BASIC_NUM_OUTSTANDING); i++) {
+            module->pSync[i] = -1;
+        }
+    }
     /* Create the non-blocking collective operation */
     coll = calloc(1, sizeof(nb_coll_t));
     if (NULL == coll) {

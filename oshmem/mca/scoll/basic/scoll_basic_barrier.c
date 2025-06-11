@@ -33,10 +33,12 @@ static int _algorithm_adaptive(struct oshmem_group_t *group, long *pSync);
 int mca_scoll_basic_barrier(struct oshmem_group_t *group, long *pSync, int alg)
 {
     int rc = OSHMEM_SUCCESS;
+    mca_scoll_basic_module_t *basic_module;
+    basic_module = (mca_scoll_basic_module_t *) group->g_scoll.scoll_barrier_module;
 
     /* Arguments validation */
     if (!group || !pSync) {
-        SCOLL_ERROR("Active set (group) of PE is not defined");
+        SCOLL_ERROR("Active set (group) of PE is not defined: %p, %p", group, pSync);
         rc = OSHMEM_ERR_BAD_PARAM;
     }
 
