@@ -106,6 +106,7 @@ mca_spml_ucx_t mca_spml_ucx = {
     },
 
     .ucp_context            = NULL,
+    .virtual_context        = NULL,
     .num_disconnect         = 1,
     .heap_reg_nb            = 0,
     .enabled                = 0,
@@ -454,9 +455,8 @@ int mca_spml_ucx_ctx_mkey_del(mca_spml_ucx_ctx_t *ucx_ctx, int pe, uint32_t segn
 int mca_spml_ucx_del_procs(oshmem_group_t* group, size_t nprocs)
 {
     size_t ucp_workers = mca_spml_ucx.ucp_workers;
-    opal_common_ucx_del_proc_t *del_procs;
     size_t i, w, n;
-    int ret;
+    int    dev_idx;
 
     oshmem_shmem_barrier();
 
@@ -464,26 +464,42 @@ int mca_spml_ucx_del_procs(oshmem_group_t* group, size_t nprocs)
         return OSHMEM_SUCCESS;
     }
 
-    del_procs = malloc(sizeof(*del_procs) * nprocs);
-    if (del_procs == NULL) {
-        return OMPI_ERR_OUT_OF_RESOURCE;
+    /* Destroy endpoints on all device contexts first */
+    if (mca_spml_ucx.virtual_context) {
+        for (dev_idx = 0; dev_idx < mca_spml_ucx.virtual_context->num_devices; dev_idx++) {
+            mca_spml_ucx_device_context_t *dev_ctx = mca_spml_ucx.virtual_context->device_contexts[dev_idx];
+            if (dev_ctx && dev_ctx->ucp_endpoints) {
+                opal_common_ucx_del_proc_t *dev_del_procs = malloc(sizeof(*dev_del_procs) * nprocs);
+                if (dev_del_procs) {
+                    for (i = 0; i < nprocs; i++) {
+                        dev_del_procs[i].ep   = dev_ctx->ucp_endpoints[i];
+                        dev_del_procs[i].vpid = i;
+                        dev_ctx->ucp_endpoints[i] = NULL;
+                    }
+
+                    (void)opal_common_ucx_del_procs_nofence(dev_del_procs, nprocs, oshmem_my_proc_id(),
+                                                            mca_spml_ucx.num_disconnect,
+                                                            dev_ctx->ucp_worker);
+                    free(dev_del_procs);
+
+                    /* Free endpoints array */
+                    free(dev_ctx->ucp_endpoints);
+                    dev_ctx->ucp_endpoints = NULL;
+                }
+            }
+        }
     }
 
+    /* Just NULL out default endpoints (they're pointers to device endpoints, already destroyed) */
     for (i = 0; i < nprocs; ++i) {
-        del_procs[i].ep   = mca_spml_ucx_ctx_default.ucp_peers[i].ucp_conn;
-        del_procs[i].vpid = i;
-
-        /* mark peer as disconnected */
         mca_spml_ucx_ctx_default.ucp_peers[i].ucp_conn = NULL;
         /* release the cached_ep_mkey buffer */
         mca_spml_ucx_peer_mkey_cache_release(&(mca_spml_ucx_ctx_default.ucp_peers[i]));
     }
 
-    ret = opal_common_ucx_del_procs_nofence(del_procs, nprocs, oshmem_my_proc_id(),
-                                            mca_spml_ucx.num_disconnect,
-                                            mca_spml_ucx_ctx_default.ucp_worker[0]);
+    /* No need to call del_procs on default worker - endpoints already destroyed above */
     /* No need to barrier here - barrier is called in _shmem_finalize */
-    free(del_procs);
+
     if (mca_spml_ucx.remote_addrs_tbl) {
         for (w = 0; w < ucp_workers; w++) {
             if (mca_spml_ucx.remote_addrs_tbl[w]) {
@@ -502,7 +518,7 @@ int mca_spml_ucx_del_procs(oshmem_group_t* group, size_t nprocs)
 
     mca_spml_ucx_ctx_default.ucp_peers = NULL;
 
-    return ret;
+    return OSHMEM_SUCCESS;
 }
 
 /* TODO: move func into common place, use it with rkey exchange too */
@@ -691,19 +707,77 @@ int mca_spml_ucx_add_procs(oshmem_group_t* group, size_t nprocs)
         }
     }
 
-    /* Get the EP connection requests for all the processes from modex */
+    /* Allocate endpoint arrays for each device context */
+    if (mca_spml_ucx.virtual_context) {
+        int dev_idx;
+        for (dev_idx = 0; dev_idx < mca_spml_ucx.virtual_context->num_devices; dev_idx++) {
+            if (mca_spml_ucx.virtual_context->device_contexts[dev_idx] &&
+                mca_spml_ucx.virtual_context->device_contexts[dev_idx]->enabled) {
+                mca_spml_ucx.virtual_context->device_contexts[dev_idx]->ucp_endpoints =
+                    (ucp_ep_h *)calloc(nprocs, sizeof(ucp_ep_h));
+                if (!mca_spml_ucx.virtual_context->device_contexts[dev_idx]->ucp_endpoints) {
+                    SPML_UCX_ERROR("Failed to allocate endpoints array for device %d", dev_idx);
+                    goto error2;
+                }
+            }
+        }
+    }
+
+    /* Create endpoints for all the processes on all device contexts */
     for (n = 0; n < nprocs; ++n) {
         i = (my_rank + n) % nprocs;
 
         ep_params.field_mask = UCP_EP_PARAM_FIELD_REMOTE_ADDRESS;
         ep_params.address    = (ucp_address_t *)mca_spml_ucx.remote_addrs_tbl[0][i];
 
-        err = ucp_ep_create(mca_spml_ucx_ctx_default.ucp_worker[0], &ep_params,
-                &mca_spml_ucx_ctx_default.ucp_peers[i].ucp_conn);
-        if (UCS_OK != err) {
-            SPML_UCX_ERROR("ucp_ep_create(proc=%zu/%zu) failed: %s", n, nprocs,
-                    ucs_status_string(err));
-            goto error2;
+        /* Create endpoints on all device contexts */
+        if (mca_spml_ucx.virtual_context) {
+            int dev_idx;
+            for (dev_idx = 0; dev_idx < mca_spml_ucx.virtual_context->num_devices; dev_idx++) {
+                mca_spml_ucx_device_context_t *dev_ctx = mca_spml_ucx.virtual_context->device_contexts[dev_idx];
+
+                if (!dev_ctx || !dev_ctx->enabled || !dev_ctx->ucp_worker) {
+                    continue;
+                }
+
+                /* Create endpoint on this device's worker */
+                err = ucp_ep_create(dev_ctx->ucp_worker, &ep_params, &dev_ctx->ucp_endpoints[i]);
+
+                if (UCS_OK != err) {
+                    SPML_UCX_WARN("ucp_ep_create(proc=%zu/%zu) failed on device %d (%s): %s",
+                                  n, nprocs, dev_idx, dev_ctx->device_name, ucs_status_string(err));
+                    dev_ctx->ep_create_failures++;
+                    dev_ctx->error_count++;
+
+                    /* Disable device if too many failures */
+                    if (dev_ctx->ep_create_failures > 3) {
+                        SPML_UCX_ERROR("Too many EP creation failures on device %d, disabling it", dev_idx);
+                        mca_spml_ucx_disable_device_context(mca_spml_ucx.virtual_context, dev_idx);
+                    }
+
+                    /* Mark endpoint as NULL so we know it's not usable */
+                    dev_ctx->ucp_endpoints[i] = NULL;
+                } else {
+                    SPML_UCX_VERBOSE(10, "Successfully created endpoint for PE %zu on device %d (%s)",
+                                     i, dev_idx, dev_ctx->device_name);
+                }
+            }
+        }
+
+        /* Point default endpoint to first device's endpoint for backward compatibility */
+        if (mca_spml_ucx.virtual_context && mca_spml_ucx.virtual_context->num_devices > 0) {
+            /* Find first enabled device and use its endpoint */
+            for (int dev_idx = 0; dev_idx < mca_spml_ucx.virtual_context->num_devices; dev_idx++) {
+                mca_spml_ucx_device_context_t *dev_ctx = mca_spml_ucx.virtual_context->device_contexts[dev_idx];
+                if (dev_ctx && dev_ctx->enabled && dev_ctx->ucp_endpoints && dev_ctx->ucp_endpoints[i]) {
+                    mca_spml_ucx_ctx_default.ucp_peers[i].ucp_conn = dev_ctx->ucp_endpoints[i];
+                    SPML_UCX_VERBOSE(10, "Default endpoint for PE %zu points to device %d", i, dev_idx);
+                    break;
+                }
+            }
+        } else {
+            /* No virtual context - shouldn't happen, but set to NULL for safety */
+            mca_spml_ucx_ctx_default.ucp_peers[i].ucp_conn = NULL;
         }
 
         /* Initialize mkeys as NULL for all processes */
@@ -727,10 +801,27 @@ int mca_spml_ucx_add_procs(oshmem_group_t* group, size_t nprocs)
     return OSHMEM_SUCCESS;
 
 error2:
+    /* Destroy endpoints on all device contexts */
+    if (mca_spml_ucx.virtual_context) {
+        int dev_idx;
+        for (dev_idx = 0; dev_idx < mca_spml_ucx.virtual_context->num_devices; dev_idx++) {
+            mca_spml_ucx_device_context_t *dev_ctx = mca_spml_ucx.virtual_context->device_contexts[dev_idx];
+            if (dev_ctx && dev_ctx->ucp_endpoints) {
+                for (i = 0; i < nprocs; i++) {
+                    if (dev_ctx->ucp_endpoints[i]) {
+                        ucp_ep_destroy(dev_ctx->ucp_endpoints[i]);
+                    }
+                }
+                free(dev_ctx->ucp_endpoints);
+                dev_ctx->ucp_endpoints = NULL;
+            }
+        }
+    }
+
+    /* No need to destroy default endpoints - they're just pointers to device endpoints */
+    /* Just NULL them out */
     for (i = 0; i < nprocs; ++i) {
-         if (mca_spml_ucx_ctx_default.ucp_peers[i].ucp_conn) {
-             ucp_ep_destroy(mca_spml_ucx_ctx_default.ucp_peers[i].ucp_conn);
-         }
+         mca_spml_ucx_ctx_default.ucp_peers[i].ucp_conn = NULL;
     }
 
     if (mca_spml_ucx.remote_addrs_tbl) {
@@ -1038,6 +1129,7 @@ static int mca_spml_ucx_ctx_create_common(long options, mca_spml_ucx_ctx_t **ucx
     sshmem_mkey_t *mkey;
     mca_spml_ucx_ctx_t *ucx_ctx;
     int rc = OSHMEM_ERROR;
+    ucp_context_h selected_context;
 
     ucx_ctx = malloc(sizeof(mca_spml_ucx_ctx_t));
     ucx_ctx->options = options;
@@ -1056,7 +1148,20 @@ static int mca_spml_ucx_ctx_create_common(long options, mca_spml_ucx_ctx_t **ucx
         params.thread_mode = UCS_THREAD_MODE_MULTI;
     }
 
-    err = ucp_worker_create(mca_spml_ucx.ucp_context, &params,
+    /* Select context using load balancing if virtual context is available */
+    if (mca_spml_ucx.virtual_context &&
+        mca_spml_ucx.virtual_context->num_enabled_devices > 0) {
+        selected_context = mca_spml_ucx_get_next_context(mca_spml_ucx.virtual_context);
+        if (!selected_context) {
+            SPML_UCX_ERROR("Failed to get context from virtual context");
+            free(ucx_ctx);
+            return OSHMEM_ERROR;
+        }
+    } else {
+        selected_context = mca_spml_ucx.ucp_context;
+    }
+
+    err = ucp_worker_create(selected_context, &params,
                             &ucx_ctx->ucp_worker[0]);
     if (UCS_OK != err) {
         free(ucx_ctx);
@@ -1074,14 +1179,62 @@ static int mca_spml_ucx_ctx_create_common(long options, mca_spml_ucx_ctx_t **ucx
     }
 
     for (i = 0; i < nprocs; i++) {
+        int retry_count = 0;
+        int max_retries = mca_spml_ucx.virtual_context ?
+                          mca_spml_ucx.virtual_context->num_devices : 1;
+        bool ep_created = false;
+
         ep_params.field_mask = UCP_EP_PARAM_FIELD_REMOTE_ADDRESS;
         ep_params.address    = (ucp_address_t *)(mca_spml_ucx.remote_addrs_tbl[cur_ucp_worker][i]);
 
-        err = ucp_ep_create(ucx_ctx->ucp_worker[0], &ep_params,
-                            &ucx_ctx->ucp_peers[i].ucp_conn);
-        if (UCS_OK != err) {
-            SPML_ERROR("ucp_ep_create(proc=%d/%d) failed: %s", i, nprocs,
-                       ucs_status_string(err));
+        /* Try to create endpoint with retry logic */
+        while (!ep_created && retry_count < max_retries) {
+            err = ucp_ep_create(ucx_ctx->ucp_worker[0], &ep_params,
+                                &ucx_ctx->ucp_peers[i].ucp_conn);
+
+            if (UCS_OK == err) {
+                ep_created = true;
+                SPML_UCX_VERBOSE(10, "Successfully created endpoint for PE %zu in context", i);
+            } else {
+                SPML_UCX_WARN("ucp_ep_create(proc=%zu/%zu) failed in context creation: %s",
+                              i, nprocs, ucs_status_string(err));
+
+                if (mca_spml_ucx.virtual_context &&
+                    mca_spml_ucx.virtual_context->num_enabled_devices > 1) {
+                    /* Track failure on current device context */
+                    int curr_device = mca_spml_ucx.virtual_context->current_device_idx;
+                    if (curr_device >= 0 && curr_device < mca_spml_ucx.virtual_context->num_devices &&
+                        mca_spml_ucx.virtual_context->device_contexts[curr_device]) {
+                        mca_spml_ucx.virtual_context->device_contexts[curr_device]->ep_create_failures++;
+                        mca_spml_ucx.virtual_context->device_contexts[curr_device]->error_count++;
+                    }
+
+                    retry_count++;
+                    if (retry_count < max_retries) {
+                        SPML_UCX_VERBOSE(5, "Retrying EP creation for PE %zu (attempt %d/%d)",
+                                         i, retry_count + 1, max_retries);
+                        /* Recreate worker with different context */
+                        ucp_worker_destroy(ucx_ctx->ucp_worker[0]);
+                        selected_context = mca_spml_ucx_get_next_context(mca_spml_ucx.virtual_context);
+                        if (selected_context) {
+                            err = ucp_worker_create(selected_context, &params, &ucx_ctx->ucp_worker[0]);
+                            if (err != UCS_OK) {
+                                SPML_ERROR("Failed to recreate worker: %s", ucs_status_string(err));
+                                goto error2;
+                            }
+                        }
+                    }
+                } else {
+                    SPML_ERROR("ucp_ep_create(proc=%d/%d) failed: %s", i, nprocs,
+                               ucs_status_string(err));
+                    goto error2;
+                }
+            }
+        }
+
+        if (!ep_created) {
+            SPML_ERROR("Failed to create endpoint for PE %zu after %d attempts in context",
+                       i, retry_count);
             goto error2;
         }
 

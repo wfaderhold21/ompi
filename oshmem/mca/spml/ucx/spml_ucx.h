@@ -124,6 +124,26 @@ typedef struct mca_spml_ucx_ctx_array {
     mca_spml_ucx_ctx_t       **ctxs;
 } mca_spml_ucx_ctx_array_t;
 
+/* Structure to track individual network device contexts */
+typedef struct mca_spml_ucx_device_context {
+    ucp_context_h            ucp_context;
+    ucp_worker_h             ucp_worker;
+    ucp_ep_h                 *ucp_endpoints;  /* Array of endpoints, one per peer */
+    char                     *device_name;
+    bool                     enabled;
+    int                      error_count;
+    int                      ep_create_failures;
+} mca_spml_ucx_device_context_t;
+
+/* Virtual context that manages multiple device contexts */
+typedef struct mca_spml_ucx_virtual_context {
+    mca_spml_ucx_device_context_t **device_contexts;
+    int                      num_devices;
+    int                      num_enabled_devices;
+    int                      current_device_idx;  /* For round-robin load balancing */
+    pthread_mutex_t          device_mutex;
+} mca_spml_ucx_virtual_context_t;
+
 typedef struct mca_spml_ucx_team_config {
     shmem_team_config_t super;
 
@@ -140,7 +160,8 @@ typedef struct mca_spml_ucx_team {
 
 struct mca_spml_ucx {
     mca_spml_base_module_t   super;
-    ucp_context_h            ucp_context;
+    ucp_context_h            ucp_context;  /* Primary context for backward compatibility */
+    mca_spml_ucx_virtual_context_t *virtual_context;  /* Multi-device virtual context */
     int                      num_disconnect;
     int                      heap_reg_nb;
     bool                     enabled;
@@ -426,6 +447,14 @@ static inline void mca_spml_ucx_remote_op_posted(mca_spml_ucx_ctx_t *ctx, int ds
 
 #define MCA_SPML_UCX_CTXS_ARRAY_SIZE 64
 #define MCA_SPML_UCX_CTXS_ARRAY_INC 64
+
+/* Multi-context management functions */
+int mca_spml_ucx_virtual_context_create(mca_spml_ucx_virtual_context_t **vctx);
+void mca_spml_ucx_virtual_context_destroy(mca_spml_ucx_virtual_context_t *vctx);
+int mca_spml_ucx_enumerate_devices(char ***device_names, int *num_devices);
+ucp_context_h mca_spml_ucx_get_next_context(mca_spml_ucx_virtual_context_t *vctx);
+int mca_spml_ucx_get_next_device_index(mca_spml_ucx_virtual_context_t *vctx);
+int mca_spml_ucx_disable_device_context(mca_spml_ucx_virtual_context_t *vctx, int device_idx);
 
 END_C_DECLS
 

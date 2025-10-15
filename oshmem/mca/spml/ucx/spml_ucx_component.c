@@ -13,7 +13,10 @@
 #include <stdio.h>
 
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <stdbool.h>
 
 #include "oshmem_config.h"
 #include "shmem.h"
@@ -259,50 +262,353 @@ static int mca_spml_ucx_component_close(void)
     return OSHMEM_SUCCESS;
 }
 
+/* Enumerate available network devices using sysfs */
+int mca_spml_ucx_enumerate_devices(char ***device_names, int *num_devices)
+{
+    char **names = NULL;
+    int count = 0;
+    unsigned max_devices = 32;
+
+    SPML_UCX_VERBOSE(1, "Enumerating network devices...");
+
+    /* Note: UCT component-based enumeration has API compatibility issues
+     * across UCX versions. Use sysfs-based enumeration which is more stable. */
+
+    /* Try to enumerate from /sys/class/infiniband */
+    SPML_UCX_VERBOSE(5, "Using /sys filesystem enumeration");
+
+    names = (char **)calloc(max_devices, sizeof(char *));
+    if (!names) {
+        return OSHMEM_ERR_OUT_OF_RESOURCE;
+    }
+    count = 0;
+
+    /* Check /sys/class/infiniband for RDMA devices */
+    DIR *dir = opendir("/sys/class/infiniband");
+    if (dir) {
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL && count < (int)max_devices) {
+            if (entry->d_name[0] != '.') {
+                names[count] = strdup(entry->d_name);
+                if (names[count]) {
+                    SPML_UCX_VERBOSE(1, "Found device in /sys: %s", names[count]);
+                    count++;
+                }
+            }
+        }
+        closedir(dir);
+    }
+
+    /* If still no devices found, use "all" as default */
+    if (count == 0) {
+        names[0] = strdup("all");
+        count = 1;
+        SPML_UCX_VERBOSE(1, "No specific devices found, using 'all'");
+    }
+
+    *device_names = names;
+    *num_devices = count;
+    SPML_UCX_VERBOSE(1, "Enumerated %d network devices", count);
+    return OSHMEM_SUCCESS;
+}
+
+/* Create virtual context managing multiple device contexts */
+int mca_spml_ucx_virtual_context_create(mca_spml_ucx_virtual_context_t **vctx)
+{
+    mca_spml_ucx_virtual_context_t *new_vctx;
+
+    new_vctx = (mca_spml_ucx_virtual_context_t *)calloc(1, sizeof(mca_spml_ucx_virtual_context_t));
+    if (!new_vctx) {
+        return OSHMEM_ERR_OUT_OF_RESOURCE;
+    }
+
+    new_vctx->device_contexts = NULL;
+    new_vctx->num_devices = 0;
+    new_vctx->num_enabled_devices = 0;
+    new_vctx->current_device_idx = 0;
+    pthread_mutex_init(&new_vctx->device_mutex, NULL);
+
+    *vctx = new_vctx;
+    return OSHMEM_SUCCESS;
+}
+
+/* Destroy virtual context and cleanup all device contexts */
+void mca_spml_ucx_virtual_context_destroy(mca_spml_ucx_virtual_context_t *vctx)
+{
+    int i;
+
+    if (!vctx) {
+        return;
+    }
+
+    if (vctx->device_contexts) {
+        for (i = 0; i < vctx->num_devices; i++) {
+            if (vctx->device_contexts[i]) {
+                /* Cleanup endpoints array (actual endpoints should be destroyed separately) */
+                if (vctx->device_contexts[i]->ucp_endpoints) {
+                    free(vctx->device_contexts[i]->ucp_endpoints);
+                }
+                /* Cleanup worker */
+                if (vctx->device_contexts[i]->ucp_worker) {
+                    ucp_worker_destroy(vctx->device_contexts[i]->ucp_worker);
+                }
+                /* Cleanup context */
+                if (vctx->device_contexts[i]->ucp_context) {
+                    ucp_cleanup(vctx->device_contexts[i]->ucp_context);
+                }
+                if (vctx->device_contexts[i]->device_name) {
+                    free(vctx->device_contexts[i]->device_name);
+                }
+                free(vctx->device_contexts[i]);
+            }
+        }
+        free(vctx->device_contexts);
+    }
+
+    pthread_mutex_destroy(&vctx->device_mutex);
+    free(vctx);
+}
+
+/* Get next available device index using round-robin load balancing */
+int mca_spml_ucx_get_next_device_index(mca_spml_ucx_virtual_context_t *vctx)
+{
+    int i, start_idx, checked = 0;
+    int device_idx = -1;
+
+    if (!vctx || vctx->num_enabled_devices == 0) {
+        return -1;
+    }
+
+    pthread_mutex_lock(&vctx->device_mutex);
+
+    start_idx = vctx->current_device_idx;
+
+    /* Find next enabled device using round-robin */
+    for (i = start_idx; checked < vctx->num_devices; i = (i + 1) % vctx->num_devices, checked++) {
+        if (vctx->device_contexts[i] && vctx->device_contexts[i]->enabled) {
+            device_idx = i;
+            vctx->current_device_idx = (i + 1) % vctx->num_devices;
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&vctx->device_mutex);
+
+    return device_idx;
+}
+
+/* Get next available context using round-robin load balancing */
+ucp_context_h mca_spml_ucx_get_next_context(mca_spml_ucx_virtual_context_t *vctx)
+{
+    int device_idx = mca_spml_ucx_get_next_device_index(vctx);
+
+    if (device_idx < 0 || !vctx->device_contexts[device_idx]) {
+        return NULL;
+    }
+
+    return vctx->device_contexts[device_idx]->ucp_context;
+}
+
+/* Disable a device context due to errors */
+int mca_spml_ucx_disable_device_context(mca_spml_ucx_virtual_context_t *vctx, int device_idx)
+{
+    if (!vctx || device_idx < 0 || device_idx >= vctx->num_devices) {
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+
+    pthread_mutex_lock(&vctx->device_mutex);
+
+    if (vctx->device_contexts[device_idx] && vctx->device_contexts[device_idx]->enabled) {
+        vctx->device_contexts[device_idx]->enabled = false;
+        vctx->num_enabled_devices--;
+        SPML_UCX_ERROR("Disabled device context %d (%s) due to errors. %d devices remaining.",
+                       device_idx,
+                       vctx->device_contexts[device_idx]->device_name,
+                       vctx->num_enabled_devices);
+    }
+
+    pthread_mutex_unlock(&vctx->device_mutex);
+
+    return OSHMEM_SUCCESS;
+}
+
 static int spml_ucx_init(void)
 {
     unsigned int i;
+    int j, rc;
     ucs_status_t err;
     ucp_config_t *ucp_config;
     ucp_params_t params;
     ucp_context_attr_t attr;
     ucp_worker_params_t wkr_params;
     ucp_worker_attr_t wrk_attr;
+    char **device_names = NULL;
+    int num_devices = 0;
+    char *saved_net_devices = NULL;
+    char *ucx_net_devices_env = NULL;
 
+    /* Step 1: Enumerate network devices BEFORE calling ucp_init */
+    SPML_UCX_VERBOSE(1, "Enumerating network devices...");
+    rc = mca_spml_ucx_enumerate_devices(&device_names, &num_devices);
+    if (rc != OSHMEM_SUCCESS || num_devices == 0) {
+        SPML_UCX_ERROR("Failed to enumerate network devices");
+        return OSHMEM_ERROR;
+    }
+
+    SPML_UCX_VERBOSE(1, "Found %d network devices", num_devices);
+
+    /* Step 2: Create virtual context structure */
+    rc = mca_spml_ucx_virtual_context_create(&mca_spml_ucx.virtual_context);
+    if (rc != OSHMEM_SUCCESS) {
+        SPML_UCX_ERROR("Failed to create virtual context");
+        goto error_free_devices;
+    }
+
+    /* Allocate device context array */
+    mca_spml_ucx.virtual_context->device_contexts =
+        (mca_spml_ucx_device_context_t **)calloc(num_devices, sizeof(mca_spml_ucx_device_context_t *));
+    if (!mca_spml_ucx.virtual_context->device_contexts) {
+        SPML_UCX_ERROR("Failed to allocate device contexts array");
+        goto error_destroy_vctx;
+    }
+
+    mca_spml_ucx.virtual_context->num_devices = num_devices;
+    mca_spml_ucx.virtual_context->num_enabled_devices = 0;
+
+    /* Save original UCX_NET_DEVICES environment variable */
+    ucx_net_devices_env = getenv("UCX_NET_DEVICES");
+    if (ucx_net_devices_env) {
+        saved_net_devices = strdup(ucx_net_devices_env);
+    }
+
+    /* Step 3: Create one UCP context for each network device */
+    for (j = 0; j < num_devices; j++) {
+        mca_spml_ucx_device_context_t *dev_ctx;
+
+        SPML_UCX_VERBOSE(1, "Creating UCP context for device: %s", device_names[j]);
+
+        /* Allocate device context */
+        dev_ctx = (mca_spml_ucx_device_context_t *)calloc(1, sizeof(mca_spml_ucx_device_context_t));
+        if (!dev_ctx) {
+            SPML_UCX_ERROR("Failed to allocate device context for device %d", j);
+            continue;
+        }
+
+        dev_ctx->device_name = strdup(device_names[j]);
+        dev_ctx->enabled = true;
+        dev_ctx->error_count = 0;
+        dev_ctx->ep_create_failures = 0;
+        dev_ctx->ucp_worker = NULL;
+        dev_ctx->ucp_endpoints = NULL;
+
+        /* Set UCX_NET_DEVICES for this specific device */
+        setenv("UCX_NET_DEVICES", device_names[j], 1);
+
+        /* Read configuration for this device */
+        err = ucp_config_read("OSHMEM", NULL, &ucp_config);
+        if (UCS_OK != err) {
+            SPML_UCX_ERROR("Failed to read UCP config for device %s: %s",
+                           device_names[j], ucs_status_string(err));
+            free(dev_ctx->device_name);
+            free(dev_ctx);
+            continue;
+        }
+
+        /* Setup UCP parameters */
+        memset(&params, 0, sizeof(params));
+        params.field_mask        = UCP_PARAM_FIELD_FEATURES          |
+                                   UCP_PARAM_FIELD_ESTIMATED_NUM_EPS |
+                                   UCP_PARAM_FIELD_MT_WORKERS_SHARED;
+        params.features          = UCP_FEATURE_RMA   |
+                                   UCP_FEATURE_AMO32 |
+                                   UCP_FEATURE_AMO64;
+        params.estimated_num_eps = ompi_proc_world_size();
+        if (oshmem_mpi_thread_requested == SHMEM_THREAD_MULTIPLE) {
+            params.mt_workers_shared = 1;
+        } else {
+            params.mt_workers_shared = 0;
+        }
+
+#if HAVE_DECL_UCP_PARAM_FIELD_ESTIMATED_NUM_PPN
+        params.estimated_num_ppn = opal_process_info.num_local_peers + 1;
+        params.field_mask       |= UCP_PARAM_FIELD_ESTIMATED_NUM_PPN;
+#endif
+
+#if HAVE_DECL_UCP_PARAM_FIELD_NODE_LOCAL_ID
+        params.node_local_id = opal_process_info.my_local_rank;
+        params.field_mask   |= UCP_PARAM_FIELD_NODE_LOCAL_ID;
+#endif
+
+        /* Create UCP context for this device */
+        err = ucp_init(&params, ucp_config, &dev_ctx->ucp_context);
+        ucp_config_release(ucp_config);
+
+        if (UCS_OK != err) {
+            SPML_UCX_WARN("Failed to create UCP context for device %s: %s",
+                          device_names[j], ucs_status_string(err));
+            free(dev_ctx->device_name);
+            free(dev_ctx);
+            continue;
+        }
+
+        /* Create worker for this device context */
+        err = ucp_worker_create(dev_ctx->ucp_context, &wkr_params, &dev_ctx->ucp_worker);
+        if (UCS_OK != err) {
+            SPML_UCX_WARN("Failed to create worker for device %s: %s",
+                          device_names[j], ucs_status_string(err));
+            ucp_cleanup(dev_ctx->ucp_context);
+            free(dev_ctx->device_name);
+            free(dev_ctx);
+            continue;
+        }
+
+        /* Store device context */
+        mca_spml_ucx.virtual_context->device_contexts[j] = dev_ctx;
+        mca_spml_ucx.virtual_context->num_enabled_devices++;
+
+        SPML_UCX_VERBOSE(1, "Successfully created context and worker for device %s", device_names[j]);
+    }
+
+    /* Restore original UCX_NET_DEVICES or unset it */
+    if (saved_net_devices) {
+        setenv("UCX_NET_DEVICES", saved_net_devices, 1);
+        free(saved_net_devices);
+    } else {
+        unsetenv("UCX_NET_DEVICES");
+    }
+
+    /* Free device names array */
+    for (j = 0; j < num_devices; j++) {
+        if (device_names[j]) {
+            free(device_names[j]);
+        }
+    }
+    free(device_names);
+
+    /* Check if we successfully created at least one context */
+    if (mca_spml_ucx.virtual_context->num_enabled_devices == 0) {
+        SPML_UCX_ERROR("Failed to create any UCP contexts");
+        goto error_destroy_vctx;
+    }
+
+    SPML_UCX_VERBOSE(1, "Created %d UCP contexts from %d devices",
+                     mca_spml_ucx.virtual_context->num_enabled_devices, num_devices);
+
+    /* Set primary context to first enabled device for backward compatibility */
+    for (j = 0; j < num_devices; j++) {
+        if (mca_spml_ucx.virtual_context->device_contexts[j] &&
+            mca_spml_ucx.virtual_context->device_contexts[j]->enabled) {
+            mca_spml_ucx.ucp_context = mca_spml_ucx.virtual_context->device_contexts[j]->ucp_context;
+            break;
+        }
+    }
+
+    /* Query context attributes from primary context */
     err = ucp_config_read("OSHMEM", NULL, &ucp_config);
     if (UCS_OK != err) {
         return OSHMEM_ERROR;
     }
-
-    memset(&params, 0, sizeof(params));
-    params.field_mask        = UCP_PARAM_FIELD_FEATURES          |
-                               UCP_PARAM_FIELD_ESTIMATED_NUM_EPS |
-                               UCP_PARAM_FIELD_MT_WORKERS_SHARED;
-    params.features          = UCP_FEATURE_RMA   |
-                               UCP_FEATURE_AMO32 |
-                               UCP_FEATURE_AMO64;
-    params.estimated_num_eps = ompi_proc_world_size();
-    if (oshmem_mpi_thread_requested == SHMEM_THREAD_MULTIPLE) {
-        params.mt_workers_shared = 1;
-    } else {
-        params.mt_workers_shared = 0;
-    }
-
-#if HAVE_DECL_UCP_PARAM_FIELD_ESTIMATED_NUM_PPN
-    params.estimated_num_ppn = opal_process_info.num_local_peers + 1;
-    params.field_mask       |= UCP_PARAM_FIELD_ESTIMATED_NUM_PPN;
-#endif
-
-#if HAVE_DECL_UCP_PARAM_FIELD_NODE_LOCAL_ID
-    params.node_local_id = opal_process_info.my_local_rank;
-    params.field_mask   |= UCP_PARAM_FIELD_NODE_LOCAL_ID;
-#endif
-
-    err = ucp_init(&params, ucp_config, &mca_spml_ucx.ucp_context);
     ucp_config_release(ucp_config);
-    if (UCS_OK != err) {
-        return OSHMEM_ERROR;
-    }
 
     attr.field_mask = UCP_ATTR_FIELD_THREAD_MODE;
     err = ucp_context_query(mca_spml_ucx.ucp_context, &attr);
@@ -384,6 +690,21 @@ static int spml_ucx_init(void)
     oshmem_ctx_default = (shmem_ctx_t) &mca_spml_ucx_ctx_default;
 
     return OSHMEM_SUCCESS;
+
+error_destroy_vctx:
+    mca_spml_ucx_virtual_context_destroy(mca_spml_ucx.virtual_context);
+    mca_spml_ucx.virtual_context = NULL;
+
+error_free_devices:
+    if (device_names) {
+        for (j = 0; j < num_devices; j++) {
+            if (device_names[j]) {
+                free(device_names[j]);
+            }
+        }
+        free(device_names);
+    }
+    return OSHMEM_ERROR;
 }
 
 static mca_spml_base_module_t*
@@ -547,10 +868,14 @@ static int mca_spml_ucx_component_fini(void)
     SHMEM_MUTEX_DESTROY(mca_spml_ucx.internal_mutex);
     pthread_mutex_destroy(&mca_spml_ucx.ctx_create_mutex);
 
-    if (mca_spml_ucx.ucp_context) {
-        ucp_cleanup(mca_spml_ucx.ucp_context);
-        mca_spml_ucx.ucp_context = NULL;
+    /* Cleanup virtual context and all device contexts */
+    if (mca_spml_ucx.virtual_context) {
+        mca_spml_ucx_virtual_context_destroy(mca_spml_ucx.virtual_context);
+        mca_spml_ucx.virtual_context = NULL;
     }
+
+    /* ucp_context is now managed by virtual_context, so just NULL it */
+    mca_spml_ucx.ucp_context = NULL;
 
     return OSHMEM_SUCCESS;
 }
