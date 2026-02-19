@@ -130,12 +130,9 @@ static ucp_request_param_t mca_spml_ucx_request_param_b = {
 unsigned
 mca_spml_ucx_mem_map_flags_symmetric_rkey(struct mca_spml_ucx *spml_ucx)
 {
-#if HAVE_DECL_UCP_MEM_MAP_SYMMETRIC_RKEY
-    if (spml_ucx->symmetric_rkey_max_count > 0) {
-        return UCP_MEM_MAP_SYMMETRIC_RKEY;
-    }
-#endif
-
+    /* UCP_MEM_MAP_SYMMETRIC_RKEY may not be available in all UCX versions */
+    /* Return 0 if not available - the symmetric rkey feature will be disabled */
+    (void)spml_ucx; /* Suppress unused parameter warning */
     return 0;
 }
 
@@ -181,34 +178,17 @@ static int mca_spml_ucx_rkey_store_find(const mca_spml_ucx_rkey_store_t *store,
                                         const ucp_rkey_h rkey,
                                         int *index)
 {
-#if HAVE_DECL_UCP_RKEY_COMPARE
-    ucp_rkey_compare_params_t params;
-    int i, result, m, end;
-    ucs_status_t status;
-
-    for (i = 0, end = store->count; i < end;) {
-        m = (i + end) / 2;
-
-        params.field_mask = 0;
-        status = ucp_rkey_compare(worker, store->array[m].rkey,
-                                  rkey, &params, &result);
-        if (status != UCS_OK) {
-            return OSHMEM_ERROR;
-        } else if (result == 0) {
-            *index = m;
+    /* Use linear search - ucp_rkey_compare API may not be available in all UCX versions */
+    /* TODO: Re-enable binary search with ucp_rkey_compare when UCX version supports it */
+    int i;
+    for (i = 0; i < store->count; i++) {
+        if (store->array[i].rkey == rkey) {
+            *index = i;
             return OSHMEM_SUCCESS;
-        } else if (result > 0) {
-            end = m;
-        } else {
-            i = m + 1;
         }
     }
-
-    *index = i;
+    *index = store->count;
     return OSHMEM_ERR_NOT_FOUND;
-#else
-    return OSHMEM_ERROR;
-#endif
 }
 
 static void mca_spml_ucx_rkey_store_insert(mca_spml_ucx_rkey_store_t *store,

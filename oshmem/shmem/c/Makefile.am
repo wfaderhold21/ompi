@@ -42,6 +42,8 @@ OSHMEM_API_SOURCES = \
 	shmem_wait.c \
 	shmem_iget.c \
 	shmem_iput.c \
+	shmem_ibget.c \
+	shmem_ibput.c \
 	shmem_get_nb.c \
 	shmem_put_nb.c \
 	shmem_udcflush.c \
@@ -81,6 +83,8 @@ OSHMEM_API_SOURCES = \
 	shmem_put_signal_nb.c \
 	shmem_swap_nb.c \
 	shmem_team.c \
+	shmem_scan.c \
+	shmem_signal.c \
 	shmem_wait_ivars.c \
 	shmem_test_ivars.c \
 	shmem_info.c

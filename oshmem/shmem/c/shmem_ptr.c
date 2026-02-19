@@ -21,6 +21,7 @@
 #include "oshmem/runtime/runtime.h"
 #include "oshmem/mca/memheap/memheap.h"
 #include "oshmem/mca/memheap/base/base.h"
+#include "oshmem/proc/team.h"
 
 
 #if OSHMEM_PROFILING
@@ -67,4 +68,24 @@ void *shmem_ptr(const void *dst_addr, int pe)
     }
 
     return NULL;
+}
+
+void *shmem_team_ptr(shmem_team_t team, const void *dst_addr, int pe)
+{
+    int world_pe;
+
+    RUNTIME_CHECK_INIT();
+
+    if (!oshmem_team_is_valid(team)) {
+        return NULL;
+    }
+
+    /* Translate team PE to world PE */
+    world_pe = oshmem_team_translate_pe(team, pe, oshmem_team_world);
+    if (world_pe < 0) {
+        return NULL;
+    }
+
+    /* Use the standard shmem_ptr with the world PE */
+    return shmem_ptr(dst_addr, world_pe);
 }

@@ -221,17 +221,19 @@ OSHMEM_DECLSPEC void shmem_ctx_destroy(shmem_ctx_t ctx);
 /*
  * Team management operations
  */
-typedef struct { int dummy; } * shmem_team_t;
+struct oshmem_team_t;
+typedef struct oshmem_team_t * shmem_team_t;
 typedef struct { int num_contexts; } shmem_team_config_t;
 
-extern shmem_team_t oshmem_team_shared;
-extern shmem_team_t oshmem_team_world;
+OSHMEM_DECLSPEC extern shmem_team_t oshmem_team_shared;
+OSHMEM_DECLSPEC extern shmem_team_t oshmem_team_world;
 
 #define SHMEM_TEAM_SHARED oshmem_team_shared
 #define SHMEM_TEAM_WORLD  oshmem_team_world
 
 OSHMEM_DECLSPEC int shmem_team_my_pe(shmem_team_t team);
 OSHMEM_DECLSPEC int shmem_team_n_pes(shmem_team_t team);
+OSHMEM_DECLSPEC void *shmem_team_ptr(shmem_team_t team, const void *ptr, int pe);
 OSHMEM_DECLSPEC int shmem_team_get_config(shmem_team_t team, long config_mask, shmem_team_config_t *config);
 OSHMEM_DECLSPEC int shmem_team_translate_pe(shmem_team_t src_team, int src_pe, shmem_team_t dest_team);
 OSHMEM_DECLSPEC int shmem_team_split_strided(shmem_team_t parent_team, int start, int stride, int size, const shmem_team_config_t *config, long config_mask, shmem_team_t *new_team);
@@ -782,6 +784,191 @@ OSHMEM_DECLSPEC  int shmem_complexf_prod_reduce(shmem_team_t team, OSHMEM_COMPLE
 
 
 /*
+ * Scan (prefix) operations - OpenSHMEM 1.6
+ */
+
+/* Inclusive SUM scan */
+OSHMEM_DECLSPEC  int shmem_char_sum_iscan(shmem_team_t team, char *target, const char *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_short_sum_iscan(shmem_team_t team, short *target, const short *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int_sum_iscan(shmem_team_t team, int *target, const int *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_long_sum_iscan(shmem_team_t team, long *target, const long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_float_sum_iscan(shmem_team_t team, float *target, const float *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_double_sum_iscan(shmem_team_t team, double *target, const double *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_longlong_sum_iscan(shmem_team_t team, long long *target, const long long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_schar_sum_iscan(shmem_team_t team, signed char *target, const signed char *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uchar_sum_iscan(shmem_team_t team, unsigned char *target, const unsigned char *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ushort_sum_iscan(shmem_team_t team, unsigned short *target, const unsigned short *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint_sum_iscan(shmem_team_t team, unsigned int *target, const unsigned int *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ulong_sum_iscan(shmem_team_t team, unsigned long *target, const unsigned long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ulonglong_sum_iscan(shmem_team_t team, unsigned long long *target, const unsigned long long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_longdouble_sum_iscan(shmem_team_t team, long double *target, const long double *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int8_sum_iscan(shmem_team_t team, int8_t *target, const int8_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int16_sum_iscan(shmem_team_t team, int16_t *target, const int16_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int32_sum_iscan(shmem_team_t team, int32_t *target, const int32_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int64_sum_iscan(shmem_team_t team, int64_t *target, const int64_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint8_sum_iscan(shmem_team_t team, uint8_t *target, const uint8_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint16_sum_iscan(shmem_team_t team, uint16_t *target, const uint16_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint32_sum_iscan(shmem_team_t team, uint32_t *target, const uint32_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint64_sum_iscan(shmem_team_t team, uint64_t *target, const uint64_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_size_sum_iscan(shmem_team_t team, size_t *target, const size_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ptrdiff_sum_iscan(shmem_team_t team, ptrdiff_t *target, const ptrdiff_t *source, size_t nreduce);
+#if OSHMEM_HAVE_C11
+#define shmem_sum_iscan(...)                                                    \
+    _Generic(&*(__OSHMEM_VAR_ARG2(__VA_ARGS__)),                                \
+            char*:        shmem_char_sum_iscan,                                 \
+            short*:       shmem_short_sum_iscan,                                \
+            int*:         shmem_int_sum_iscan,                                  \
+            long*:        shmem_long_sum_iscan,                                 \
+            long long*:   shmem_longlong_sum_iscan,                             \
+            signed char*:        shmem_schar_sum_iscan,                         \
+            unsigned char*:      shmem_uchar_sum_iscan,                         \
+            unsigned short*:     shmem_ushort_sum_iscan,                        \
+            unsigned int*:       shmem_uint_sum_iscan,                          \
+            unsigned long*:      shmem_ulong_sum_iscan,                         \
+            unsigned long long*: shmem_ulonglong_sum_iscan,                     \
+            float*:       shmem_float_sum_iscan,                                \
+            double*:      shmem_double_sum_iscan,                               \
+            long double*: shmem_longdouble_sum_iscan,                           \
+            default:      __oshmem_datatype_ignore)(__VA_ARGS__)
+#endif
+
+/* Exclusive SUM scan */
+OSHMEM_DECLSPEC  int shmem_char_sum_escan(shmem_team_t team, char *target, const char *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_short_sum_escan(shmem_team_t team, short *target, const short *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int_sum_escan(shmem_team_t team, int *target, const int *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_long_sum_escan(shmem_team_t team, long *target, const long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_float_sum_escan(shmem_team_t team, float *target, const float *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_double_sum_escan(shmem_team_t team, double *target, const double *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_longlong_sum_escan(shmem_team_t team, long long *target, const long long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_schar_sum_escan(shmem_team_t team, signed char *target, const signed char *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uchar_sum_escan(shmem_team_t team, unsigned char *target, const unsigned char *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ushort_sum_escan(shmem_team_t team, unsigned short *target, const unsigned short *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint_sum_escan(shmem_team_t team, unsigned int *target, const unsigned int *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ulong_sum_escan(shmem_team_t team, unsigned long *target, const unsigned long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ulonglong_sum_escan(shmem_team_t team, unsigned long long *target, const unsigned long long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_longdouble_sum_escan(shmem_team_t team, long double *target, const long double *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int8_sum_escan(shmem_team_t team, int8_t *target, const int8_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int16_sum_escan(shmem_team_t team, int16_t *target, const int16_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int32_sum_escan(shmem_team_t team, int32_t *target, const int32_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int64_sum_escan(shmem_team_t team, int64_t *target, const int64_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint8_sum_escan(shmem_team_t team, uint8_t *target, const uint8_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint16_sum_escan(shmem_team_t team, uint16_t *target, const uint16_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint32_sum_escan(shmem_team_t team, uint32_t *target, const uint32_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint64_sum_escan(shmem_team_t team, uint64_t *target, const uint64_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_size_sum_escan(shmem_team_t team, size_t *target, const size_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ptrdiff_sum_escan(shmem_team_t team, ptrdiff_t *target, const ptrdiff_t *source, size_t nreduce);
+#if OSHMEM_HAVE_C11
+#define shmem_sum_escan(...)                                                    \
+    _Generic(&*(__OSHMEM_VAR_ARG2(__VA_ARGS__)),                                \
+            char*:        shmem_char_sum_escan,                                 \
+            short*:       shmem_short_sum_escan,                                \
+            int*:         shmem_int_sum_escan,                                  \
+            long*:        shmem_long_sum_escan,                                 \
+            long long*:   shmem_longlong_sum_escan,                             \
+            signed char*:        shmem_schar_sum_escan,                         \
+            unsigned char*:      shmem_uchar_sum_escan,                         \
+            unsigned short*:     shmem_ushort_sum_escan,                        \
+            unsigned int*:       shmem_uint_sum_escan,                          \
+            unsigned long*:      shmem_ulong_sum_escan,                         \
+            unsigned long long*: shmem_ulonglong_sum_escan,                     \
+            float*:       shmem_float_sum_escan,                                \
+            double*:      shmem_double_sum_escan,                               \
+            long double*: shmem_longdouble_sum_escan,                           \
+            default:      __oshmem_datatype_ignore)(__VA_ARGS__)
+#endif
+
+/* Inclusive PROD scan */
+OSHMEM_DECLSPEC  int shmem_char_prod_iscan(shmem_team_t team, char *target, const char *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_short_prod_iscan(shmem_team_t team, short *target, const short *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int_prod_iscan(shmem_team_t team, int *target, const int *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_long_prod_iscan(shmem_team_t team, long *target, const long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_float_prod_iscan(shmem_team_t team, float *target, const float *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_double_prod_iscan(shmem_team_t team, double *target, const double *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_longlong_prod_iscan(shmem_team_t team, long long *target, const long long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_schar_prod_iscan(shmem_team_t team, signed char *target, const signed char *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uchar_prod_iscan(shmem_team_t team, unsigned char *target, const unsigned char *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ushort_prod_iscan(shmem_team_t team, unsigned short *target, const unsigned short *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint_prod_iscan(shmem_team_t team, unsigned int *target, const unsigned int *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ulong_prod_iscan(shmem_team_t team, unsigned long *target, const unsigned long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ulonglong_prod_iscan(shmem_team_t team, unsigned long long *target, const unsigned long long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_longdouble_prod_iscan(shmem_team_t team, long double *target, const long double *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int8_prod_iscan(shmem_team_t team, int8_t *target, const int8_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int16_prod_iscan(shmem_team_t team, int16_t *target, const int16_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int32_prod_iscan(shmem_team_t team, int32_t *target, const int32_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int64_prod_iscan(shmem_team_t team, int64_t *target, const int64_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint8_prod_iscan(shmem_team_t team, uint8_t *target, const uint8_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint16_prod_iscan(shmem_team_t team, uint16_t *target, const uint16_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint32_prod_iscan(shmem_team_t team, uint32_t *target, const uint32_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint64_prod_iscan(shmem_team_t team, uint64_t *target, const uint64_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_size_prod_iscan(shmem_team_t team, size_t *target, const size_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ptrdiff_prod_iscan(shmem_team_t team, ptrdiff_t *target, const ptrdiff_t *source, size_t nreduce);
+#if OSHMEM_HAVE_C11
+#define shmem_prod_iscan(...)                                                   \
+    _Generic(&*(__OSHMEM_VAR_ARG2(__VA_ARGS__)),                                \
+            char*:        shmem_char_prod_iscan,                                \
+            short*:       shmem_short_prod_iscan,                               \
+            int*:         shmem_int_prod_iscan,                                 \
+            long*:        shmem_long_prod_iscan,                                \
+            long long*:   shmem_longlong_prod_iscan,                            \
+            signed char*:        shmem_schar_prod_iscan,                        \
+            unsigned char*:      shmem_uchar_prod_iscan,                        \
+            unsigned short*:     shmem_ushort_prod_iscan,                       \
+            unsigned int*:       shmem_uint_prod_iscan,                         \
+            unsigned long*:      shmem_ulong_prod_iscan,                        \
+            unsigned long long*: shmem_ulonglong_prod_iscan,                    \
+            float*:       shmem_float_prod_iscan,                               \
+            double*:      shmem_double_prod_iscan,                              \
+            long double*: shmem_longdouble_prod_iscan,                          \
+            default:      __oshmem_datatype_ignore)(__VA_ARGS__)
+#endif
+
+/* Exclusive PROD scan */
+OSHMEM_DECLSPEC  int shmem_char_prod_escan(shmem_team_t team, char *target, const char *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_short_prod_escan(shmem_team_t team, short *target, const short *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int_prod_escan(shmem_team_t team, int *target, const int *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_long_prod_escan(shmem_team_t team, long *target, const long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_float_prod_escan(shmem_team_t team, float *target, const float *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_double_prod_escan(shmem_team_t team, double *target, const double *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_longlong_prod_escan(shmem_team_t team, long long *target, const long long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_schar_prod_escan(shmem_team_t team, signed char *target, const signed char *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uchar_prod_escan(shmem_team_t team, unsigned char *target, const unsigned char *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ushort_prod_escan(shmem_team_t team, unsigned short *target, const unsigned short *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint_prod_escan(shmem_team_t team, unsigned int *target, const unsigned int *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ulong_prod_escan(shmem_team_t team, unsigned long *target, const unsigned long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ulonglong_prod_escan(shmem_team_t team, unsigned long long *target, const unsigned long long *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_longdouble_prod_escan(shmem_team_t team, long double *target, const long double *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int8_prod_escan(shmem_team_t team, int8_t *target, const int8_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int16_prod_escan(shmem_team_t team, int16_t *target, const int16_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int32_prod_escan(shmem_team_t team, int32_t *target, const int32_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_int64_prod_escan(shmem_team_t team, int64_t *target, const int64_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint8_prod_escan(shmem_team_t team, uint8_t *target, const uint8_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint16_prod_escan(shmem_team_t team, uint16_t *target, const uint16_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint32_prod_escan(shmem_team_t team, uint32_t *target, const uint32_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_uint64_prod_escan(shmem_team_t team, uint64_t *target, const uint64_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_size_prod_escan(shmem_team_t team, size_t *target, const size_t *source, size_t nreduce);
+OSHMEM_DECLSPEC  int shmem_ptrdiff_prod_escan(shmem_team_t team, ptrdiff_t *target, const ptrdiff_t *source, size_t nreduce);
+#if OSHMEM_HAVE_C11
+#define shmem_prod_escan(...)                                                   \
+    _Generic(&*(__OSHMEM_VAR_ARG2(__VA_ARGS__)),                                \
+            char*:        shmem_char_prod_escan,                                \
+            short*:       shmem_short_prod_escan,                               \
+            int*:         shmem_int_prod_escan,                                 \
+            long*:        shmem_long_prod_escan,                                \
+            long long*:   shmem_longlong_prod_escan,                            \
+            signed char*:        shmem_schar_prod_escan,                        \
+            unsigned char*:      shmem_uchar_prod_escan,                        \
+            unsigned short*:     shmem_ushort_prod_escan,                       \
+            unsigned int*:       shmem_uint_prod_escan,                         \
+            unsigned long*:      shmem_ulong_prod_escan,                        \
+            unsigned long long*: shmem_ulonglong_prod_escan,                    \
+            float*:       shmem_float_prod_escan,                               \
+            double*:      shmem_double_prod_escan,                              \
+            long double*: shmem_longdouble_prod_escan,                          \
+            default:      __oshmem_datatype_ignore)(__VA_ARGS__)
+#endif
+
+
+/*
  * Elemental put routines
  */
 OSHMEM_DECLSPEC  void shmem_ctx_char_p(shmem_ctx_t ctx, char* addr, char value, int pe);
@@ -1068,6 +1255,21 @@ OSHMEM_DECLSPEC void shmem_iput16(void* target, const void* source, ptrdiff_t ts
 OSHMEM_DECLSPEC void shmem_iput32(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst,size_t len, int pe);
 OSHMEM_DECLSPEC void shmem_iput64(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst,size_t len, int pe);
 OSHMEM_DECLSPEC void shmem_iput128(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst,size_t len, int pe);
+
+/*
+ * Interleaved block put routines - OpenSHMEM 1.6
+ */
+OSHMEM_DECLSPEC void shmem_ctx_ibput8(shmem_ctx_t ctx, void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ctx_ibput16(shmem_ctx_t ctx, void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ctx_ibput32(shmem_ctx_t ctx, void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ctx_ibput64(shmem_ctx_t ctx, void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ctx_ibput128(shmem_ctx_t ctx, void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+
+OSHMEM_DECLSPEC void shmem_ibput8(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ibput16(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ibput32(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ibput64(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ibput128(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
 
 /*
  * Nonblocking put routines
@@ -1379,6 +1581,17 @@ OSHMEM_DECLSPEC void shmem_ctx_putmem_signal_nbi(shmem_ctx_t ctx, void *dest, co
 
 OSHMEM_DECLSPEC uint64_t shmem_signal_fetch(const uint64_t *sig_addr);
 
+/*
+ * Signal set/add operations - OpenSHMEM 1.6
+ */
+OSHMEM_DECLSPEC void shmem_signal_set(uint64_t *sig_addr, uint64_t signal, int pe);
+OSHMEM_DECLSPEC void shmem_signal_add(uint64_t *sig_addr, uint64_t signal, int pe);
+
+/*
+ * Signal wait operations - OpenSHMEM 1.6
+ */
+OSHMEM_DECLSPEC uint64_t shmem_signal_wait_until(uint64_t *sig_addr, int cmp, uint64_t cmp_value);
+
 
 /*
  * Elemental get routines
@@ -1666,6 +1879,21 @@ OSHMEM_DECLSPEC void shmem_iget16(void* target, const void* source, ptrdiff_t ts
 OSHMEM_DECLSPEC void shmem_iget32(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst,size_t len, int pe);
 OSHMEM_DECLSPEC void shmem_iget64(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst,size_t len, int pe);
 OSHMEM_DECLSPEC void shmem_iget128(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst,size_t len, int pe);
+
+/*
+ * Interleaved block get routines - OpenSHMEM 1.6
+ */
+OSHMEM_DECLSPEC void shmem_ctx_ibget8(shmem_ctx_t ctx, void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ctx_ibget16(shmem_ctx_t ctx, void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ctx_ibget32(shmem_ctx_t ctx, void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ctx_ibget64(shmem_ctx_t ctx, void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ctx_ibget128(shmem_ctx_t ctx, void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+
+OSHMEM_DECLSPEC void shmem_ibget8(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ibget16(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ibget32(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ibget64(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
+OSHMEM_DECLSPEC void shmem_ibget128(void* target, const void* source, ptrdiff_t tst, ptrdiff_t sst, size_t bsize, size_t nblocks, int pe);
 
 /*
  * Nonblocking data get routines

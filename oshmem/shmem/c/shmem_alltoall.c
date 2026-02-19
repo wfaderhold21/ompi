@@ -20,6 +20,7 @@
 #include "oshmem/mca/spml/spml.h"
 
 #include "oshmem/proc/proc.h"
+#include "oshmem/proc/team.h"
 
 static void _shmem_alltoall(void *target,
                             const void *source,
@@ -177,8 +178,13 @@ SHMEM_TYPE_ALLTOALLS(_alltoalls64, sizeof(uint64_t))
                                                                     \
         RUNTIME_CHECK_INIT();                                       \
                                                                     \
-        rc = MCA_SPML_CALL(team_alltoall(                           \
-            team, (void*)dest, (void*)source, nelems, code));       \
+        if (!oshmem_team_is_valid(team)) {                          \
+            return OSHMEM_ERR_BAD_PARAM;                            \
+        }                                                           \
+                                                                    \
+        rc = team->group->g_scoll.scoll_alltoall(team->group,       \
+            (void*)dest, (void*)source, 1, 1, nelems, sizeof(type), \
+            team->sync, SCOLL_DEFAULT_ALG);                         \
         RUNTIME_CHECK_RC(rc);                                       \
                                                                     \
         return rc;                                                  \
@@ -220,9 +226,13 @@ SHMEM_TYPE_TEAM_ALLTOALL(, void, SHMEM_BYTE, _alltoallmem)
                                                                     \
         RUNTIME_CHECK_INIT();                                       \
                                                                     \
-        rc = MCA_SPML_CALL(team_alltoalls(                          \
-            team, (void*)dest, (void*)source,                       \
-                    dst, sst, nelems, code));                       \
+        if (!oshmem_team_is_valid(team)) {                          \
+            return OSHMEM_ERR_BAD_PARAM;                            \
+        }                                                           \
+                                                                    \
+        rc = team->group->g_scoll.scoll_alltoall(team->group,       \
+            (void*)dest, (void*)source, dst, sst, nelems,           \
+            sizeof(type), team->sync, SCOLL_DEFAULT_ALG);           \
         RUNTIME_CHECK_RC(rc);                                       \
                                                                     \
         return rc;                                                  \

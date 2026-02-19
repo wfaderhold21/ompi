@@ -55,6 +55,7 @@
 #include "oshmem/info/info.h"
 #include "oshmem/proc/proc.h"
 #include "oshmem/proc/proc_group_cache.h"
+#include "oshmem/proc/team.h"
 #include "oshmem/op/op.h"
 #include "oshmem/request/request.h"
 #include "oshmem/shmem/shmem_api_logger.h"
@@ -95,8 +96,8 @@ shmem_internal_mutex_t shmem_internal_mutex_alloc = {{0}};
 
 shmem_ctx_t oshmem_ctx_default = NULL;
 
-shmem_team_t oshmem_team_shared = NULL;
-shmem_team_t oshmem_team_world  = NULL;
+/* oshmem_team_shared and oshmem_team_world are defined in proc/team.c */
+/* They are declared as extern in include/shmem.h */
 
 static int _shmem_init(int argc, char **argv, int requested, int *provided);
 
@@ -333,6 +334,14 @@ static int _shmem_init(int argc, char **argv, int requested, int *provided)
     }
 
     OPAL_TIMING_ENV_NEXT(timing, "oshmem_proc_group_init()");
+
+    /* Initialize teams (must be after groups are initialized) */
+    if (OSHMEM_SUCCESS != (ret = oshmem_team_init())) {
+        error = "oshmem_team_init() failed";
+        goto error;
+    }
+
+    OPAL_TIMING_ENV_NEXT(timing, "oshmem_team_init()");
 
     /* start SPML/BTL's */
     ret = MCA_SPML_CALL(enable(true));

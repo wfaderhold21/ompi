@@ -592,6 +592,9 @@
 #define shmem_ctx_putmem_signal_nbi              pshmem_ctx_putmem_signal_nbi
 
 #define shmem_signal_fetch                       pshmem_signal_fetch
+#define shmem_signal_set                        pshmem_signal_set
+#define shmem_signal_add                        pshmem_signal_add
+#define shmem_signal_wait_until                 pshmem_signal_wait_until
 
 /*
  * Block data put routines
@@ -725,6 +728,18 @@
 #define shmem_iput32                 pshmem_iput32
 #define shmem_iput64                 pshmem_iput64
 #define shmem_iput128                pshmem_iput128
+
+#define shmem_ctx_ibput8             pshmem_ctx_ibput8
+#define shmem_ctx_ibput16            pshmem_ctx_ibput16
+#define shmem_ctx_ibput32            pshmem_ctx_ibput32
+#define shmem_ctx_ibput64            pshmem_ctx_ibput64
+#define shmem_ctx_ibput128           pshmem_ctx_ibput128
+
+#define shmem_ibput8                 pshmem_ibput8
+#define shmem_ibput16                pshmem_ibput16
+#define shmem_ibput32                pshmem_ibput32
+#define shmem_ibput64                pshmem_ibput64
+#define shmem_ibput128               pshmem_ibput128
 
 /*
  * Non-block data put routines
@@ -981,6 +996,18 @@
 #define shmem_iget32                 pshmem_iget32
 #define shmem_iget64                 pshmem_iget64
 #define shmem_iget128                pshmem_iget128
+
+#define shmem_ctx_ibget8             pshmem_ctx_ibget8
+#define shmem_ctx_ibget16            pshmem_ctx_ibget16
+#define shmem_ctx_ibget32            pshmem_ctx_ibget32
+#define shmem_ctx_ibget64            pshmem_ctx_ibget64
+#define shmem_ctx_ibget128           pshmem_ctx_ibget128
+
+#define shmem_ibget8                 pshmem_ibget8
+#define shmem_ibget16                pshmem_ibget16
+#define shmem_ibget32                pshmem_ibget32
+#define shmem_ibget64                pshmem_ibget64
+#define shmem_ibget128               pshmem_ibget128
 
 /*
  * Non-block data get routines

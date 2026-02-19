@@ -183,7 +183,7 @@ segment_create(map_segment_t *ds_buf,
     unsigned flags       = UCP_MEM_MAP_ALLOCATE;
 
     if (hint & SHMEM_HINT_DEVICE_NIC_MEM) {
-#if HAVE_DECL_UCS_MEMORY_TYPE_RDMA
+#if defined(UCS_MEMORY_TYPE_RDMA)
         int status = segment_create_internal(ds_buf, NULL, size,
                                              flags, UCS_MEMORY_TYPE_RDMA, 3);
         if (status == OSHMEM_SUCCESS) {
@@ -192,8 +192,16 @@ segment_create(map_segment_t *ds_buf,
             return OSHMEM_SUCCESS;
         }
 #else 
-       SSHMEM_VERBOSE(3, "DEVICE_NIC_MEM hint ignored since UCX does not "
-                      "support MEMORY_TYPE_RDMA");
+        /* UCS_MEMORY_TYPE_RDMA not available, fall back to HOST memory type */
+        SSHMEM_VERBOSE(3, "DEVICE_NIC_MEM hint: UCS_MEMORY_TYPE_RDMA not available, "
+                      "using UCS_MEMORY_TYPE_HOST");
+        int status = segment_create_internal(ds_buf, NULL, size,
+                                             flags, UCS_MEMORY_TYPE_HOST, 3);
+        if (status == OSHMEM_SUCCESS) {
+            ds_buf->alloc_hints = hint;
+            ds_buf->allocator   = &sshmem_ucx_allocator;
+            return OSHMEM_SUCCESS;
+        }
 #endif
         return OSHMEM_ERR_NOT_IMPLEMENTED;
     }

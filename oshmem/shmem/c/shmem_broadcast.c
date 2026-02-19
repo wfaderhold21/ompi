@@ -20,6 +20,7 @@
 #include "oshmem/mca/spml/spml.h"
 
 #include "oshmem/proc/proc.h"
+#include "oshmem/proc/team.h"
 
 static void _shmem_broadcast(void *target,
                               const void *source,
@@ -135,9 +136,14 @@ SHMEM_TYPE_BROADCAST(_broadcast64, sizeof(uint64_t))
                                                                     \
         RUNTIME_CHECK_INIT();                                       \
                                                                     \
-        rc = MCA_SPML_CALL(team_broadcast(                          \
-            team, (void*)dest, (void*)source,                       \
-                    nelems, PE_root, code));                        \
+        if (!oshmem_team_is_valid(team)) {                          \
+            return OSHMEM_ERR_BAD_PARAM;                            \
+        }                                                           \
+                                                                    \
+        rc = team->group->g_scoll.scoll_broadcast(team->group,      \
+            PE_root, (void*)dest, (const void*)source,              \
+            nelems * sizeof(type), team->sync, true,                \
+            SCOLL_DEFAULT_ALG);                                     \
         RUNTIME_CHECK_RC(rc);                                       \
                                                                     \
         return rc;                                                  \

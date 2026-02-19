@@ -18,6 +18,7 @@
 #include "oshmem/mca/scoll/scoll.h"
 #include "oshmem/mca/spml/spml.h"
 #include "oshmem/proc/proc.h"
+#include "oshmem/proc/team.h"
 #include "oshmem/op/op.h"
 
 /*
@@ -380,22 +381,99 @@ SHMEM_TYPE_REDUCE_OP(prod, _int32, int32_t, shmemx)
 SHMEM_TYPE_REDUCE_OP(prod, _int64, int64_t, shmemx)
 
 
+/* Helper macro to map type names to operation object names */
+/* Use a function-like macro that expands to the mapping macro name, which then expands to the mapped value */
+#define OSHMEM_OP_TYPE_TO_OP_TYPE(type_name) \
+    OSHMEM_OP_TYPE_TO_OP_TYPE_##type_name
+
+/* Map unsigned/special types to available operation objects */
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__uchar _short
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__ushort _short
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__uint _int
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__ulong _long
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__ulonglong _longlong
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__uint8 _int16
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__uint16 _int16
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__uint32 _int32
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__uint64 _int64
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__char _short
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__schar _short
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__size _long
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__ptrdiff _long
+
+/* For types that already have operation objects, map to themselves */
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__short _short
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__int _int
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__long _long
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__longlong _longlong
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__int8 _int16
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__int16 _int16
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__int32 _int32
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__int64 _int64
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__float _float
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__double _double
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__longdouble _longdouble
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__complexf _complexf
+#define OSHMEM_OP_TYPE_TO_OP_TYPE__complexd _complexd
+
+/* Helper to get the operation object name */
+/* Due to C preprocessor limitations with ##, we use explicit per-type mappings */
+/* For types that have direct operation objects, use them directly */
+#define OSHMEM_OP_OBJ_NAME(_op, type_name) \
+    OSHMEM_OP_OBJ_NAME_##type_name(_op)
+
+/* Direct mappings for types that have operation objects */
+#define OSHMEM_OP_OBJ_NAME__short(_op) oshmem_op_##_op##_short
+#define OSHMEM_OP_OBJ_NAME__int(_op) oshmem_op_##_op##_int
+#define OSHMEM_OP_OBJ_NAME__long(_op) oshmem_op_##_op##_long
+#define OSHMEM_OP_OBJ_NAME__longlong(_op) oshmem_op_##_op##_longlong
+#define OSHMEM_OP_OBJ_NAME__int8(_op) oshmem_op_##_op##_int16
+#define OSHMEM_OP_OBJ_NAME__int16(_op) oshmem_op_##_op##_int16
+#define OSHMEM_OP_OBJ_NAME__int32(_op) oshmem_op_##_op##_int32
+#define OSHMEM_OP_OBJ_NAME__int64(_op) oshmem_op_##_op##_int64
+#define OSHMEM_OP_OBJ_NAME__float(_op) oshmem_op_##_op##_float
+#define OSHMEM_OP_OBJ_NAME__double(_op) oshmem_op_##_op##_double
+#define OSHMEM_OP_OBJ_NAME__longdouble(_op) oshmem_op_##_op##_longdouble
+#define OSHMEM_OP_OBJ_NAME__complexf(_op) oshmem_op_##_op##_complexf
+#define OSHMEM_OP_OBJ_NAME__complexd(_op) oshmem_op_##_op##_complexd
+
+/* Mappings for unsigned/special types to available operation objects */
+#define OSHMEM_OP_OBJ_NAME__uchar(_op) oshmem_op_##_op##_short
+#define OSHMEM_OP_OBJ_NAME__ushort(_op) oshmem_op_##_op##_short
+#define OSHMEM_OP_OBJ_NAME__uint(_op) oshmem_op_##_op##_int
+#define OSHMEM_OP_OBJ_NAME__ulong(_op) oshmem_op_##_op##_long
+#define OSHMEM_OP_OBJ_NAME__ulonglong(_op) oshmem_op_##_op##_longlong
+#define OSHMEM_OP_OBJ_NAME__uint8(_op) oshmem_op_##_op##_int16
+#define OSHMEM_OP_OBJ_NAME__uint16(_op) oshmem_op_##_op##_int16
+#define OSHMEM_OP_OBJ_NAME__uint32(_op) oshmem_op_##_op##_int32
+#define OSHMEM_OP_OBJ_NAME__uint64(_op) oshmem_op_##_op##_int64
+#define OSHMEM_OP_OBJ_NAME__char(_op) oshmem_op_##_op##_short
+#define OSHMEM_OP_OBJ_NAME__schar(_op) oshmem_op_##_op##_short
+#define OSHMEM_OP_OBJ_NAME__size(_op) oshmem_op_##_op##_long
+#define OSHMEM_OP_OBJ_NAME__ptrdiff(_op) oshmem_op_##_op##_long
+
 #define SHMEM_TYPE_TEAM_REDUCE_OP(_op, type_name, type, op_code, code)                      \
-    int shmem##type_name##_##_op##_reduce( shmem_team_t team, type *dest, const type *source, size_t nreduce)                                 \
+    int shmem##type_name##_##_op##_reduce(shmem_team_t team, type *dest, const type *source, size_t nreduce)  \
 {                                                                                           \
     int rc = OSHMEM_SUCCESS;                                                                \
+    oshmem_op_t* op = OSHMEM_OP_OBJ_NAME(_op, type_name);                                   \
+    size_t size;                                                                            \
                                                                                             \
     RUNTIME_CHECK_INIT();                                                                   \
     RUNTIME_CHECK_ADDR_SIZE(dest, nreduce);                                                 \
     RUNTIME_CHECK_ADDR_SIZE(source, nreduce);                                               \
                                                                                             \
-    {                                                                                       \
-                                                                                            \
-        /* Call collective reduce operation */                                              \
-        rc = MCA_SPML_CALL(team_reduce(                                                     \
-            team, (void*)dest, (void*)source, nreduce, op_code, code));                     \
-                                                                                            \
+    if (!oshmem_team_is_valid(team)) {                                                      \
+        return OSHMEM_ERR_BAD_PARAM;                                                        \
     }                                                                                       \
+                                                                                            \
+    size = nreduce * op->dt_size;                                                           \
+                                                                                            \
+    /* Call collective reduce operation via team's group */                                 \
+    rc = team->group->g_scoll.scoll_reduce(team->group, op,                                 \
+            (void*)dest, (const void*)source, size,                                         \
+            team->sync, team->work, SCOLL_DEFAULT_ALG);                                     \
+                                                                                            \
     RUNTIME_CHECK_RC(rc);                                                                   \
                                                                                             \
     return rc;                                                                              \
