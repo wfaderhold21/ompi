@@ -1017,6 +1017,14 @@ typedef int (*mca_spml_base_module_wait_nb_fn_t)(void *);
 typedef void (*mca_spml_base_module_memuse_hook_fn_t)(void *, size_t);
 
 /**
+ * Optional: report process memory snapshot for profiling (e.g. SPML/UCX).
+ * If non-NULL, called at init phases to record VmRSS/VmSize/VmPeak.
+ *
+ * @param phase   Label for this snapshot (e.g. "spml_ucx_init", "post_get_all_mkeys").
+ */
+typedef void (*mca_spml_base_module_report_memory_fn_t)(const char *phase);
+
+/**
  *  SPML instance.
  */
 struct mca_spml_base_module_1_0_0_t {
@@ -1087,6 +1095,7 @@ struct mca_spml_base_module_1_0_0_t {
 
     mca_spml_base_module_memuse_hook_fn_t spml_memuse_hook;
     mca_spml_base_module_put_all_nb_fn_t  spml_put_all_nb;
+    mca_spml_base_module_report_memory_fn_t spml_report_memory;
     void *self;
 };
 

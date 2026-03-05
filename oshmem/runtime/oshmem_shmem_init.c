@@ -177,6 +177,10 @@ int oshmem_shmem_init(int argc, char **argv, int requested, int *provided)
         OMPI_TIMING_NEXT("get_all_mkeys()");
         OMPI_TIMING_IMPORT_OPAL("mca_memheap_modex_recv_all");
 
+        if (mca_spml.spml_report_memory) {
+            mca_spml.spml_report_memory("post_get_all_mkeys");
+        }
+
         oshmem_shmem_preconnect_all();
         OMPI_TIMING_NEXT("shmem_preconnect_all");
 

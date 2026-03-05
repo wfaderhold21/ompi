@@ -49,5 +49,17 @@ static inline void oshmem_framework_open_output(struct mca_base_framework_t *fra
     }
 }
 
+/**
+ * Record process memory snapshot for SPML/UCX profiling.
+ * Reads VmRSS, VmSize, VmPeak from /proc/self/status on Linux; otherwise
+ * uses getrusage() for maxrss.
+ * If OSHMEM_SPML_UCX_MEMORY_PROFILE_FILE is set, appends one CSV line to that file.
+ * Otherwise prints one line to stdout.
+ *
+ * @param phase   Label for this snapshot (e.g. "spml_ucx_init")
+ * @param rank    PE rank (use -1 if not yet known)
+ * @param nprocs  Number of PEs (use -1 if not yet known)
+ */
+void oshmem_memory_snapshot(const char *phase, int rank, int nprocs);
 
 #endif /* OSHMEM_UTIL_H */

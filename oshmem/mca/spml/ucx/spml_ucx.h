@@ -166,6 +166,7 @@ struct mca_spml_ucx {
     unsigned int             ucp_workers;
     unsigned int             ucp_worker_cnt;
     int                      symmetric_rkey_max_count;
+    bool                     profile_memory;
 };
 typedef struct mca_spml_ucx mca_spml_ucx_t;
 

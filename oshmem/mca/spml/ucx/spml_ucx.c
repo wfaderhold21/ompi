@@ -29,6 +29,7 @@
 
 #include "oshmem/mca/spml/ucx/spml_ucx.h"
 #include "oshmem/include/shmem.h"
+#include "oshmem/util/oshmem_util.h"
 #include "oshmem/mca/memheap/memheap.h"
 #include "oshmem/mca/memheap/base/base.h"
 #include "oshmem/proc/proc.h"
@@ -102,6 +103,7 @@ mca_spml_ucx_t mca_spml_ucx = {
         .spml_team_collect              = mca_spml_ucx_team_collect,
         .spml_team_fcollect             = mca_spml_ucx_team_fcollect,
         .spml_team_reduce               = mca_spml_ucx_team_reduce,
+        .spml_report_memory             = mca_spml_ucx_report_memory,
         .self                           = (void*)&mca_spml_ucx
     },
 
@@ -109,7 +111,8 @@ mca_spml_ucx_t mca_spml_ucx = {
     .num_disconnect         = 1,
     .heap_reg_nb            = 0,
     .enabled                = 0,
-    .get_mkey_slow          = NULL
+    .get_mkey_slow          = NULL,
+    .profile_memory         = false
 };
 
 mca_spml_ucx_ctx_t mca_spml_ucx_ctx_default = {
@@ -290,6 +293,14 @@ static void mca_spml_ucx_rkey_store_put(mca_spml_ucx_rkey_store_t *store,
 
 out:
     ucp_rkey_destroy(rkey);
+}
+
+void mca_spml_ucx_report_memory(const char *phase)
+{
+    if (!mca_spml_ucx.profile_memory) {
+        return;
+    }
+    oshmem_memory_snapshot(phase, oshmem_my_proc_id(), oshmem_num_procs());
 }
 
 int mca_spml_ucx_enable(bool enable)
@@ -719,6 +730,10 @@ int mca_spml_ucx_add_procs(oshmem_group_t* group, size_t nprocs)
     free(wk_roffs);
     free(wk_addr_len);
     free(wk_local_addr);
+
+    if (mca_spml_ucx.profile_memory && mca_spml_ucx.super.spml_report_memory) {
+        mca_spml_ucx.super.spml_report_memory("spml_ucx_add_procs");
+    }
 
     SPML_UCX_VERBOSE(50, "*** ADDED PROCS ***");
 

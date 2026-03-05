@@ -190,6 +190,10 @@ static int mca_spml_ucx_component_register(void)
                                     "Number of ucp workers per default context",
                                     &mca_spml_ucx.ucp_workers);
 
+    mca_spml_ucx_param_register_bool("profile_memory", 0,
+                                    "Enable SPML/UCX memory profiling: record VmRSS/VmSize/VmPeak at init, add_procs, and post get_all_mkeys (default: stdout; set OSHMEM_SPML_UCX_MEMORY_PROFILE_FILE to write to a file)",
+                                    &mca_spml_ucx.profile_memory);
+
     opal_common_ucx_mca_var_register(&mca_spml_ucx_component.spmlm_version);
 
     return OSHMEM_SUCCESS;
@@ -382,6 +386,10 @@ static int spml_ucx_init(void)
     }
 
     oshmem_ctx_default = (shmem_ctx_t) &mca_spml_ucx_ctx_default;
+
+    if (mca_spml_ucx.profile_memory && mca_spml_ucx.super.spml_report_memory) {
+        mca_spml_ucx.super.spml_report_memory("spml_ucx_init");
+    }
 
     return OSHMEM_SUCCESS;
 }
