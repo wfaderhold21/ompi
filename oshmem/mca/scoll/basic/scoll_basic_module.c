@@ -143,6 +143,7 @@ mca_scoll_basic_query(struct oshmem_group_t *group, int *priority)
         module->super.scoll_alltoall = mca_scoll_basic_alltoall;
         module->super.scoll_alltoall_nb = mca_scoll_basic_alltoall_nb;
         module->super.scoll_broadcast_nb = mca_scoll_basic_broadcast_nb;
+        module->super.scoll_scan = mca_scoll_basic_scan;
         module->super.scoll_module_enable = mca_scoll_basic_enable;
 
         module->pSync = NULL;

@@ -1042,6 +1042,7 @@ static int mca_spml_ucx_ctx_create_common(long options, mca_spml_ucx_ctx_t **ucx
 
     ucx_ctx = malloc(sizeof(mca_spml_ucx_ctx_t));
     ucx_ctx->options = options;
+    ucx_ctx->team = NULL;
     ucx_ctx->ucp_worker = calloc(1, sizeof(ucp_worker_h));
     ucx_ctx->ucp_workers = 1;
     ucx_ctx->synchronized_quiet = mca_spml_ucx_ctx_default.synchronized_quiet;
@@ -1140,6 +1141,7 @@ int mca_spml_ucx_ctx_create(long options, shmem_ctx_t *ctx)
     for (i = 0; i < idle_array->ctxs_count; i++) {
         if (idle_array->ctxs[i]->options & options) {
             ucx_ctx = idle_array->ctxs[i];
+            ucx_ctx->team = NULL;  /* clear team when reusing for non-team context */
             _ctx_remove(idle_array, ucx_ctx, i);
             break;
         }
@@ -1174,6 +1176,7 @@ void mca_spml_ucx_ctx_destroy(shmem_ctx_t ctx)
     MCA_SPML_CALL(quiet(ctx));
 
     SHMEM_MUTEX_LOCK(mca_spml_ucx.internal_mutex);
+    ((mca_spml_ucx_ctx_t *)ctx)->team = NULL;  /* clear so idle reuse is safe */
     if (!(((mca_spml_ucx_ctx_t *)ctx)->options & SHMEM_CTX_PRIVATE)) {
         _ctx_remove(&mca_spml_ucx.active_array, (mca_spml_ucx_ctx_t *)ctx, 0);
     }
@@ -1851,16 +1854,29 @@ int mca_spml_ucx_team_destroy(shmem_team_t team)
     return OSHMEM_ERR_NOT_IMPLEMENTED;
 }
 
-/* This routine is not implemented */
 int mca_spml_ucx_team_get(shmem_ctx_t ctx, shmem_team_t *team)
 {
-    return OSHMEM_ERR_NOT_IMPLEMENTED;
+    mca_spml_ucx_ctx_t *ucx_ctx = (mca_spml_ucx_ctx_t *) ctx;
+    if (ctx == NULL || team == NULL || ucx_ctx->team == NULL) {
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+    *team = (shmem_team_t) ucx_ctx->team;
+    return OSHMEM_SUCCESS;
 }
 
-/* This routine is not implemented */
 int mca_spml_ucx_team_create_ctx(shmem_team_t team, long options, shmem_ctx_t *ctx)
 {
-    return OSHMEM_ERR_NOT_IMPLEMENTED;
+    int rc;
+
+    if (team == NULL || ctx == NULL) {
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+    rc = mca_spml_ucx_ctx_create(options, ctx);
+    if (rc != OSHMEM_SUCCESS) {
+        return rc;
+    }
+    ((mca_spml_ucx_ctx_t *) *ctx)->team = (void *) team;
+    return OSHMEM_SUCCESS;
 }
 
 /* This routine is not implemented */

@@ -102,6 +102,7 @@ struct mca_spml_ucx_ctx {
     bool                      synchronized_quiet;
     int                       strong_sync;
     mca_spml_ucx_rkey_store_t rkey_store;
+    void                     *team;  /* shmem_team_t when created via team_create_ctx; for team_get */
 };
 typedef struct mca_spml_ucx_ctx mca_spml_ucx_ctx_t;
 

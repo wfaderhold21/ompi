@@ -167,6 +167,15 @@ typedef int (*mca_scoll_base_module_alltoall_nb_fn_t)(struct oshmem_group_t *gro
                                                   long *pSync,
                                                   int alg,
                                                   int * request);
+typedef int (*mca_scoll_base_module_scan_fn_t)(struct oshmem_group_t *group,
+                                               struct oshmem_op_t *op,
+                                               void *target,
+                                               const void *source,
+                                               size_t nlong,
+                                               long *pSync,
+                                               void *pWrk,
+                                               bool inclusive,
+                                               int alg);
 
 struct mca_scoll_base_module_1_0_0_t {
     /** Collective modules all inherit from opal_object */
@@ -180,6 +189,7 @@ struct mca_scoll_base_module_1_0_0_t {
     mca_scoll_base_module_alltoall_fn_t scoll_alltoall;
     mca_scoll_base_module_alltoall_nb_fn_t scoll_alltoall_nb;
     mca_scoll_base_module_broadcast_nb_fn_t scoll_broadcast_nb;
+    mca_scoll_base_module_scan_fn_t scoll_scan;
 
     mca_scoll_base_module_enable_1_0_0_fn_t scoll_module_enable;
 };
@@ -221,6 +231,8 @@ struct mca_scoll_base_group_scoll_t {
     mca_scoll_base_module_1_0_0_t *scoll_alltoall_nb_module;
     mca_scoll_base_module_broadcast_nb_fn_t scoll_broadcast_nb;
     mca_scoll_base_module_1_0_0_t *scoll_broadcast_nb_module;
+    mca_scoll_base_module_scan_fn_t scoll_scan;
+    mca_scoll_base_module_1_0_0_t *scoll_scan_module;
 
 };
 typedef struct mca_scoll_base_group_scoll_t mca_scoll_base_group_scoll_t;

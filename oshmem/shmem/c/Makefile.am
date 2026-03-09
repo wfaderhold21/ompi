@@ -42,6 +42,8 @@ OSHMEM_API_SOURCES = \
 	shmem_wait.c \
 	shmem_iget.c \
 	shmem_iput.c \
+	shmem_ibget.c \
+	shmem_ibput.c \
 	shmem_get_nb.c \
 	shmem_put_nb.c \
 	shmem_udcflush.c \
@@ -51,6 +53,8 @@ OSHMEM_API_SOURCES = \
 	shmem_clear_cache_inv.c \
 	shmem_clear_cache_line_inv.c \
 	shmem_reduce.c \
+	shmem_scan.c \
+	shmem_signal.c \
 	shmem_swap.c \
 	shmem_set.c \
 	shmem_cswap.c \

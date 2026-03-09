@@ -187,6 +187,9 @@ mca_scoll_mpi_comm_query(oshmem_group_t *osh_group, int *priority)
     mpi_module->super.scoll_reduce = mca_scoll_mpi_reduce;
     mpi_module->super.scoll_collect = mca_scoll_mpi_collect;
     mpi_module->super.scoll_alltoall = NULL;
+    mpi_module->super.scoll_alltoall_nb = NULL;
+    mpi_module->super.scoll_broadcast_nb = NULL;
+    mpi_module->super.scoll_scan = NULL;
 
     *priority = cm->mpi_priority;
     module = &mpi_module->super;
