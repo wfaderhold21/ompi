@@ -173,6 +173,24 @@ static int scoll_null_broadcast_nb(struct oshmem_group_t *group,
     return OSHMEM_SUCCESS;
 }
 
+static int scoll_null_scan(struct oshmem_group_t *group,
+                           struct oshmem_op_t *op,
+                           void *target,
+                           const void *source,
+                           size_t nlong,
+                           long *pSync,
+                           void *pWrk,
+                           bool inclusive,
+                           int alg)
+{
+    if (oshmem_proc_group_is_member(group)) {
+        SCOLL_ERROR("internal error");
+        oshmem_shmem_abort(-1);
+        return OSHMEM_ERROR;
+    }
+    return OSHMEM_SUCCESS;
+}
+
 /*
  * Stuff for the OBJ interface
  */
@@ -218,6 +236,7 @@ int mca_scoll_base_group_unselect(struct oshmem_group_t * group)
     CLOSE(group, alltoall);
     CLOSE(group, alltoall_nb);
     CLOSE(group, broadcast_nb);
+    CLOSE(group, scan);
 
     /* All done */
     return OSHMEM_SUCCESS;
@@ -247,6 +266,7 @@ int mca_scoll_base_select(struct oshmem_group_t *group)
         group->g_scoll.scoll_alltoall = scoll_null_alltoall;
         group->g_scoll.scoll_alltoall_nb = scoll_null_alltoall_nb;
         group->g_scoll.scoll_broadcast_nb = scoll_null_broadcast_nb;
+        group->g_scoll.scoll_scan = scoll_null_scan;
         return OSHMEM_SUCCESS;
     }
 
@@ -281,6 +301,7 @@ int mca_scoll_base_select(struct oshmem_group_t *group)
             COPY(avail->ac_module, group, alltoall);
             COPY(avail->ac_module, group, alltoall_nb);
             COPY(avail->ac_module, group, broadcast_nb);
+            COPY(avail->ac_module, group, scan);
         }
         OBJ_RELEASE(avail->ac_module);
         OBJ_RELEASE(avail);

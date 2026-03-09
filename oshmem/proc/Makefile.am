@@ -13,9 +13,11 @@
 
 headers += \
 	proc/proc.h \
-	proc/proc_group_cache.h
+	proc/proc_group_cache.h \
+	proc/team.h
 
 liboshmem_la_SOURCES += \
 	proc/proc.c \
-	proc/proc_group_cache.c
+	proc/proc_group_cache.c \
+	proc/team.c
 

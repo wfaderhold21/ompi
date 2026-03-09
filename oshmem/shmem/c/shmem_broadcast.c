@@ -20,6 +20,7 @@
 #include "oshmem/mca/spml/spml.h"
 
 #include "oshmem/proc/proc.h"
+#include "oshmem/proc/team.h"
 
 static void _shmem_broadcast(void *target,
                               const void *source,
@@ -176,6 +177,11 @@ int shmemx_broadcastmem_nb(shmem_team_t team,
                            int PE_root,
                            shmem_req_h *req)
 {
+    if (oshmem_team_is_valid(team)) {
+        return team->group->g_scoll.scoll_broadcast_nb(team->group, PE_root,
+                target, source, nbytes, team->sync, true,
+                SCOLL_DEFAULT_ALG, req);
+    }
     return _shmem_broadcast_nb(target, source, nbytes, PE_root, 0, 0, oshmem_group_all->proc_count, NULL, req);
 }
 
@@ -221,15 +227,17 @@ SHMEM_TYPE_BROADCAST(_broadcast64, sizeof(uint64_t))
 #define SHMEM_TYPE_TEAM_BROADCAST_NB(type_name, type, code, postfix)    \
     int  shmemx##type_name##postfix(shmem_team_t team, type *dest, const type *source, size_t nelems, int PE_root, shmem_req_h *req)   \
     {                                                               \
+        int rc;                                                     \
         RUNTIME_CHECK_INIT();                                       \
         RUNTIME_CHECK_ADDR_SIZE(dest, nelems);                      \
         RUNTIME_CHECK_ADDR_SIZE(source, nelems);                    \
-                                                                    \
-        return _shmem_broadcast_nb(dest, source,                    \
-                                   nelems * sizeof(type),           \
-                                   PE_root, 0, 0, oshmem_group_all->proc_count,                        \
-                                   NULL, req);                      \
-                                                                    \
+        if (!oshmem_team_is_valid(team))                            \
+            return OSHMEM_ERR_BAD_PARAM;                            \
+        rc = team->group->g_scoll.scoll_broadcast_nb(team->group,   \
+                PE_root, dest, source, nelems * sizeof(type),       \
+                team->sync, true, SCOLL_DEFAULT_ALG, req);           \
+        RUNTIME_CHECK_RC(rc);                                       \
+        return rc;                                                  \
     }
 
 
@@ -264,14 +272,14 @@ SHMEM_TYPE_TEAM_BROADCAST_NB(_ptrdiff, ptrdiff_t, SHMEM_PTRDIFF_T, _broadcast_nb
     int  shmem##type_name##postfix(shmem_team_t team, type *dest, const type *source, size_t nelems, int PE_root)   \
     {                                                               \
         int rc = 0;                                                 \
-                                                                    \
         RUNTIME_CHECK_INIT();                                       \
-                                                                    \
-        rc = MCA_SPML_CALL(team_broadcast(                          \
-            team, (void*)dest, (void*)source,                       \
-                    nelems, PE_root, code));                        \
+        if (!oshmem_team_is_valid(team))                            \
+            return OSHMEM_ERR_BAD_PARAM;                            \
+        rc = team->group->g_scoll.scoll_broadcast(team->group,       \
+                PE_root, (void*)dest, (const void*)source,          \
+                nelems * sizeof(type), team->sync, true,            \
+                SCOLL_DEFAULT_ALG);                                  \
         RUNTIME_CHECK_RC(rc);                                       \
-                                                                    \
         return rc;                                                  \
     }
 

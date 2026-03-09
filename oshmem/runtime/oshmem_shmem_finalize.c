@@ -48,6 +48,7 @@
 #include "oshmem/info/info.h"
 #include "oshmem/proc/proc.h"
 #include "oshmem/proc/proc_group_cache.h"
+#include "oshmem/proc/team.h"
 #include "oshmem/op/op.h"
 #include "oshmem/request/request.h"
 #include "oshmem/shmem/shmem_lock.h"
@@ -143,6 +144,11 @@ static int _shmem_finalize(void)
 
     /* free op resources */
     if (OSHMEM_SUCCESS != (ret = oshmem_op_finalize())) {
+        return ret;
+    }
+
+    /* free team resources (before groups since teams depend on groups) */
+    if (OSHMEM_SUCCESS != (ret = oshmem_team_finalize())) {
         return ret;
     }
 

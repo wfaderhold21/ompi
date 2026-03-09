@@ -20,6 +20,7 @@
 #include "oshmem/mca/spml/spml.h"
 
 #include "oshmem/proc/proc.h"
+#include "oshmem/proc/team.h"
 
 #include "shmemx.h"
 
@@ -88,13 +89,17 @@ static int _shmem_alltoall_nb(void *target,
                      size_t nelems,                                  \
                      shmem_req_h * req)                              \
 {                                                                    \
+    int rc;                                                          \
     RUNTIME_CHECK_INIT();                                            \
     RUNTIME_CHECK_ADDR_SIZE(target, nelems);                         \
     RUNTIME_CHECK_ADDR_SIZE(source, nelems);                         \
-                                                                     \
-    return _shmem_alltoall_nb(target, source, 1, 1, nelems, element_size,   \
-                       0, 0, oshmem_group_all->proc_count,           \
-                       NULL, req);                                  \
+    if (!oshmem_team_is_valid(team))                                 \
+        return OSHMEM_ERR_BAD_PARAM;                                 \
+    rc = team->group->g_scoll.scoll_alltoall_nb(team->group,          \
+            target, source, 1, 1, nelems, element_size,              \
+            team->sync, SCOLL_DEFAULT_ALG, req);                      \
+    RUNTIME_CHECK_RC(rc);                                            \
+    return rc;                                                       \
 }
 
 
@@ -185,6 +190,11 @@ int shmemx_alltoallmem_nb(shmem_team_t team,
                                  size_t nelems,
                                  shmem_req_h *req)
 {
+    if (oshmem_team_is_valid(team)) {
+        return team->group->g_scoll.scoll_alltoall_nb(team->group,
+                target, source, 1, 1, nelems, 1,
+                team->sync, SCOLL_DEFAULT_ALG, req);
+    }
     return _shmem_alltoall_nb(target, source, 1, 1, nelems, 1,
                               0, 0, oshmem_group_all->proc_count, NULL,
                               req);
@@ -268,15 +278,16 @@ SHMEM_TYPE_ALLTOALLS(_alltoalls64, sizeof(uint64_t))
 #define SHMEM_TYPE_TEAM_ALLTOALL_NB(type_name, type, code, postfix)    \
     int  shmemx##type_name##postfix(shmem_team_t team, type *dest, const type *source, size_t nelems, shmem_req_h *req)   \
     {                                                               \
-        int rc = 0;                                                 \
-                                                                     \
-    RUNTIME_CHECK_INIT();                                            \
-    RUNTIME_CHECK_ADDR_SIZE(dest, nelems);                         \
-    RUNTIME_CHECK_ADDR_SIZE(source, nelems);                         \
-                                                                     \
-    return _shmem_alltoall_nb(dest, source, 1, 1, nelems, sizeof(type),   \
-                       0, 0, oshmem_group_all->proc_count,           \
-                       NULL, req);                                  \
+        int rc;                                                     \
+        RUNTIME_CHECK_INIT();                                       \
+        RUNTIME_CHECK_ADDR_SIZE(dest, nelems);                      \
+        RUNTIME_CHECK_ADDR_SIZE(source, nelems);                    \
+        if (!oshmem_team_is_valid(team))                            \
+            return OSHMEM_ERR_BAD_PARAM;                            \
+        rc = team->group->g_scoll.scoll_alltoall_nb(team->group,     \
+                dest, source, 1, 1, nelems, sizeof(type),            \
+                team->sync, SCOLL_DEFAULT_ALG, req);                 \
+        RUNTIME_CHECK_RC(rc);                                       \
         return rc;                                                  \
     }
 
@@ -285,14 +296,14 @@ SHMEM_TYPE_ALLTOALLS(_alltoalls64, sizeof(uint64_t))
 #define SHMEM_TYPE_TEAM_ALLTOALL(type_name, type, code, postfix)    \
     int  shmem##type_name##postfix(shmem_team_t team, type *dest, const type *source, size_t nelems)   \
     {                                                               \
-        int rc = 0;                                                 \
-                                                                    \
+        int rc;                                                     \
         RUNTIME_CHECK_INIT();                                       \
-                                                                    \
-        rc = MCA_SPML_CALL(team_alltoall(                           \
-            team, (void*)dest, (void*)source, nelems, code));       \
+        if (!oshmem_team_is_valid(team))                            \
+            return OSHMEM_ERR_BAD_PARAM;                            \
+        rc = team->group->g_scoll.scoll_alltoall(team->group,        \
+                (void*)dest, (void*)source, 1, 1, nelems, sizeof(type), \
+                team->sync, SCOLL_DEFAULT_ALG);                      \
         RUNTIME_CHECK_RC(rc);                                       \
-                                                                    \
         return rc;                                                  \
     }
 
@@ -354,15 +365,14 @@ SHMEM_TYPE_TEAM_ALLTOALL_NB(_ptrdiff, ptrdiff_t, SHMEM_PTRDIFF_T, _alltoall_nb)
 #define SHMEM_TYPE_TEAM_ALLTOALLS(type_name, type, code, postfix)   \
     int  shmem##type_name##postfix(shmem_team_t team, type *dest, const type *source, ptrdiff_t dst, ptrdiff_t sst,  size_t nelems)   \
     {                                                               \
-        int rc = 0;                                                 \
-                                                                    \
+        int rc;                                                     \
         RUNTIME_CHECK_INIT();                                       \
-                                                                    \
-        rc = MCA_SPML_CALL(team_alltoalls(                          \
-            team, (void*)dest, (void*)source,                       \
-                    dst, sst, nelems, code));                       \
+        if (!oshmem_team_is_valid(team))                            \
+            return OSHMEM_ERR_BAD_PARAM;                            \
+        rc = team->group->g_scoll.scoll_alltoall(team->group,        \
+                (void*)dest, (void*)source, dst, sst, nelems, sizeof(type), \
+                team->sync, SCOLL_DEFAULT_ALG);                     \
         RUNTIME_CHECK_RC(rc);                                       \
-                                                                    \
         return rc;                                                  \
     }
 

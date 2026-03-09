@@ -491,7 +491,7 @@ mca_scoll_ucc_comm_query(oshmem_group_t *osh_group, int *priority)
     SET_SCOLL_PTR(ucc_module, ALLTOALL, alltoall);
     SET_SCOLL_PTR(ucc_module, ALLTOALL, alltoall_nb);
     SET_SCOLL_PTR(ucc_module, BCAST, broadcast_nb);
-
+    ucc_module->super.scoll_scan = NULL;
 
     module = &ucc_module->super;
     return module;

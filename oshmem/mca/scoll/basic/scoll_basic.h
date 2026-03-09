@@ -168,6 +168,15 @@ int mca_scoll_basic_alltoall(struct oshmem_group_t *group,
                              long *pSync,
                              int alg);
 
+int mca_scoll_basic_scan(struct oshmem_group_t *group,
+                         struct oshmem_op_t *op,
+                         void *target,
+                         const void *source,
+                         size_t nlong,
+                         long *pSync,
+                         void *pWrk,
+                         bool inclusive,
+                         int alg);
 int mca_scoll_basic_alltoall_nb(struct oshmem_group_t *group,
                              void *target,
                              const void *source,

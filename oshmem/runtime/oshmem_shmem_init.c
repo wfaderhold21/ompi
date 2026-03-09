@@ -55,6 +55,7 @@
 #include "oshmem/info/info.h"
 #include "oshmem/proc/proc.h"
 #include "oshmem/proc/proc_group_cache.h"
+#include "oshmem/proc/team.h"
 #include "oshmem/op/op.h"
 #include "oshmem/request/request.h"
 #include "oshmem/shmem/shmem_api_logger.h"
@@ -95,8 +96,7 @@ shmem_internal_mutex_t shmem_internal_mutex_alloc = {{0}};
 
 shmem_ctx_t oshmem_ctx_default = NULL;
 
-shmem_team_t oshmem_team_shared = NULL;
-shmem_team_t oshmem_team_world  = NULL;
+/* oshmem_team_shared and oshmem_team_world are defined in proc/team.c */
 
 static int _shmem_init(int argc, char **argv, int requested, int *provided);
 
@@ -150,6 +150,10 @@ int oshmem_shmem_init(int argc, char **argv, int requested, int *provided)
 
         SHMEM_MUTEX_INIT(shmem_internal_mutex_alloc);
 
+        /* Mark runtime initialized so shmem_malloc can be used during _shmem_init
+         * (e.g. by oshmem_team_init for WORLD team sync buffers). */
+        oshmem_shmem_initialized = true;
+
         ret = _shmem_init(argc, argv, requested, provided);
         OMPI_TIMING_NEXT("_shmem_init");
         OMPI_TIMING_IMPORT_OPAL("_shmem_init");
@@ -162,9 +166,9 @@ int oshmem_shmem_init(int argc, char **argv, int requested, int *provided)
         OMPI_TIMING_IMPORT_OPAL_PREFIX("device_mem", "mca_memheap_base_alloc_init");
 
         if (OSHMEM_SUCCESS != ret) {
+            oshmem_shmem_initialized = false;
             return ret;
         }
-        oshmem_shmem_initialized = true;
 
         if (OSHMEM_SUCCESS != shmem_lock_init()) {
             SHMEM_API_ERROR( "shmem_lock_init() failed");
@@ -176,6 +180,13 @@ int oshmem_shmem_init(int argc, char **argv, int requested, int *provided)
         MCA_MEMHEAP_CALL(get_all_mkeys());
         OMPI_TIMING_NEXT("get_all_mkeys()");
         OMPI_TIMING_IMPORT_OPAL("mca_memheap_modex_recv_all");
+
+        /* Allocate sync/work buffers for WORLD and SHARED teams (deferred from team_init). */
+        if (OSHMEM_SUCCESS != oshmem_team_alloc_predefined_sync_buffers()) {
+            SHMEM_API_ERROR("oshmem_team_alloc_predefined_sync_buffers() failed");
+            oshmem_shmem_initialized = false;
+            return OSHMEM_ERROR;
+        }
 
         oshmem_shmem_preconnect_all();
         OMPI_TIMING_NEXT("shmem_preconnect_all");
@@ -333,6 +344,14 @@ static int _shmem_init(int argc, char **argv, int requested, int *provided)
     }
 
     OPAL_TIMING_ENV_NEXT(timing, "oshmem_proc_group_init()");
+
+    /* Initialize teams (must be after groups are initialized) */
+    if (OSHMEM_SUCCESS != (ret = oshmem_team_init())) {
+        error = "oshmem_team_init() failed";
+        goto error;
+    }
+
+    OPAL_TIMING_ENV_NEXT(timing, "oshmem_team_init()");
 
     /* start SPML/BTL's */
     ret = MCA_SPML_CALL(enable(true));

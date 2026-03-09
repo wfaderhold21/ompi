@@ -20,6 +20,7 @@
 #include "oshmem/mca/spml/spml.h"
 
 #include "oshmem/proc/proc.h"
+#include "oshmem/proc/team.h"
 
 static void _shmem_collect(void *target,
                             const void *source,
@@ -153,15 +154,15 @@ SHMEM_TYPE_COLLECT(_fcollect64, sizeof(uint64_t), true)
 #define SHMEM_TYPE_TEAM_COLLECT(type_name, type, code, postfix)     \
     int  shmem##type_name##postfix(shmem_team_t team, type *dest, const type *source, size_t nelems)   \
     {                                                               \
-        int rc = 0;                                                 \
-                                                                    \
+        int rc;                                                     \
         RUNTIME_CHECK_INIT();                                       \
-                                                                    \
-        rc = MCA_SPML_CALL(team_collect(                            \
-            team, (void*)dest, (void*)source,                       \
-                    nelems, code));                                 \
+        if (!oshmem_team_is_valid(team))                            \
+            return OSHMEM_ERR_BAD_PARAM;                            \
+        rc = team->group->g_scoll.scoll_collect(team->group,         \
+                (void*)dest, (const void*)source,                    \
+                nelems * sizeof(type), team->sync, true,             \
+                SCOLL_DEFAULT_ALG);                                  \
         RUNTIME_CHECK_RC(rc);                                       \
-                                                                    \
         return rc;                                                  \
     }
 
@@ -199,15 +200,15 @@ SHMEM_TYPE_TEAM_COLLECT(, void, SHMEM_BYTE, _collectmem)
 #define SHMEM_TYPE_TEAM_FCOLLECT(type_name, type, code, postfix)    \
     int  shmem##type_name##postfix(shmem_team_t team, type *dest, const type *source,  size_t nelems)   \
     {                                                               \
-        int rc = 0;                                                 \
-                                                                    \
+        int rc;                                                     \
         RUNTIME_CHECK_INIT();                                       \
-                                                                    \
-        rc = MCA_SPML_CALL(team_fcollect(                           \
-            team, (void*)dest, (void*)source,                       \
-                    nelems, code));                                 \
+        if (!oshmem_team_is_valid(team))                            \
+            return OSHMEM_ERR_BAD_PARAM;                            \
+        rc = team->group->g_scoll.scoll_collect(team->group,         \
+                (void*)dest, (const void*)source,                    \
+                nelems * sizeof(type), team->sync, true,              \
+                SCOLL_DEFAULT_ALG);                                  \
         RUNTIME_CHECK_RC(rc);                                       \
-                                                                    \
         return rc;                                                  \
     }
 
