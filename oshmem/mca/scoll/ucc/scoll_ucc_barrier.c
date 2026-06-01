@@ -6,6 +6,8 @@
 
   $HEADER$
  */
+#include <stdlib.h>
+
 #include "scoll_ucc.h"
 #include "scoll_ucc_dtypes.h"
 #include "scoll_ucc_common.h"
@@ -55,5 +57,33 @@ fallback:
     UCC_VERBOSE(3, "running fallback barrier");
     PREVIOUS_SCOLL_FN(ucc_module, barrier, group,
                       pSync, alg);
+    return rc;
+}
+
+int mca_scoll_ucc_sync_nb(struct oshmem_group_t *group, long *pSync, int alg,
+                          shmem_req_h *request)
+{
+    mca_scoll_ucc_module_t *ucc_module;
+    ucc_coll_req_h          req;
+    int                     rc;
+
+    UCC_VERBOSE(3, "running ucc sync_nb");
+    ucc_module = (mca_scoll_ucc_module_t *) group->g_scoll.scoll_sync_nb_module;
+
+    SCOLL_UCC_CHECK(mca_scoll_ucc_barrier_init(ucc_module, &req));
+    SCOLL_UCC_CHECK(ucc_collective_post(req));
+
+    *request = malloc(sizeof(struct shmem_req));
+    if (NULL == *request) {
+        ucc_collective_finalize(req);
+        return OSHMEM_ERR_OUT_OF_RESOURCE;
+    }
+    (*request)->test = scoll_ucc_nb_req_test;
+    (*request)->wait = scoll_ucc_nb_req_wait;
+    (*request)->ctx  = (void *) req;
+    return OSHMEM_SUCCESS;
+fallback:
+    UCC_VERBOSE(3, "running fallback sync_nb");
+    rc = OSHMEM_ERR_NOT_IMPLEMENTED;
     return rc;
 }

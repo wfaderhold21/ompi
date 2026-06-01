@@ -85,12 +85,20 @@ OSHMEM_DECLSPEC void pshmem_team_destroy(shmem_team_t team);
 OSHMEM_DECLSPEC int pshmem_ctx_get_team(shmem_ctx_t ctx, shmem_team_t *team);
 OSHMEM_DECLSPEC int pshmem_team_create_ctx(shmem_team_t team, long options, shmem_ctx_t *ctx);
 
+/* Nonblocking request handle profiling routines */
+OSHMEM_DECLSPEC int pshmem_req_test(shmem_req_h *request);
+OSHMEM_DECLSPEC int pshmem_req_wait(shmem_req_h *request);
+
 /*
  * Teams-based Collectives
  */
 
 /* Teams sync */
 OSHMEM_DECLSPEC  void pshmem_team_sync(shmem_team_t team);
+
+/* Nonblocking teams sync */
+OSHMEM_DECLSPEC  int pshmem_sync_nb(shmem_team_t team, shmem_req_h *request);
+OSHMEM_DECLSPEC  int pshmem_team_sync_nb(shmem_team_t team, shmem_req_h *request);
 
 
 /* Teams alltoall */

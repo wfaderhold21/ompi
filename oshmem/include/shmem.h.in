@@ -242,11 +242,24 @@ OSHMEM_DECLSPEC int shmem_ctx_get_team(shmem_ctx_t ctx, shmem_team_t *team);
 OSHMEM_DECLSPEC int shmem_team_create_ctx(shmem_team_t team, long options, shmem_ctx_t *ctx);
 
 /*
+ * Nonblocking request handle
+ */
+#define SHMEM_REQ_INVALID   NULL
+struct shmem_req;
+typedef struct shmem_req *shmem_req_h;
+OSHMEM_DECLSPEC int shmem_req_test(shmem_req_h *request);
+OSHMEM_DECLSPEC int shmem_req_wait(shmem_req_h *request);
+
+/*
  * Teams-based Collectives
  */
 
 /* Teams sync */
 OSHMEM_DECLSPEC  void shmem_team_sync(shmem_team_t team);
+
+/* Nonblocking teams sync */
+OSHMEM_DECLSPEC  int shmem_sync_nb(shmem_team_t team, shmem_req_h *request);
+OSHMEM_DECLSPEC  int shmem_team_sync_nb(shmem_team_t team, shmem_req_h *request);
 
 /* Teams alltoall */
 OSHMEM_DECLSPEC  int shmem_char_alltoall(shmem_team_t team, char *target, const char *source, size_t nelems);

@@ -157,6 +157,7 @@ static int scoll_null_alltoall_nb(struct oshmem_group_t *group,
 }
 
 static int scoll_null_broadcast_nb(struct oshmem_group_t *group,
+                              int PE_root,
                               void *target,
                               const void *source,
                               size_t nlong,
@@ -164,6 +165,19 @@ static int scoll_null_broadcast_nb(struct oshmem_group_t *group,
                               bool nlong_type,
                               int alg,
                               shmem_req_h * request)
+{
+    if (oshmem_proc_group_is_member(group)) {
+        SCOLL_ERROR("internal error");
+        oshmem_shmem_abort(-1);
+        return OSHMEM_ERROR;
+    }
+    return OSHMEM_SUCCESS;
+}
+
+static int scoll_null_sync_nb(struct oshmem_group_t *group,
+                              long *pSync,
+                              int alg,
+                              shmem_req_h *request)
 {
     if (oshmem_proc_group_is_member(group)) {
         SCOLL_ERROR("internal error");
@@ -236,6 +250,7 @@ int mca_scoll_base_group_unselect(struct oshmem_group_t * group)
     CLOSE(group, alltoall);
     CLOSE(group, alltoall_nb);
     CLOSE(group, broadcast_nb);
+    CLOSE(group, sync_nb);
     CLOSE(group, scan);
 
     /* All done */
@@ -266,6 +281,7 @@ int mca_scoll_base_select(struct oshmem_group_t *group)
         group->g_scoll.scoll_alltoall = scoll_null_alltoall;
         group->g_scoll.scoll_alltoall_nb = scoll_null_alltoall_nb;
         group->g_scoll.scoll_broadcast_nb = scoll_null_broadcast_nb;
+        group->g_scoll.scoll_sync_nb = scoll_null_sync_nb;
         group->g_scoll.scoll_scan = scoll_null_scan;
         return OSHMEM_SUCCESS;
     }
@@ -301,6 +317,7 @@ int mca_scoll_base_select(struct oshmem_group_t *group)
             COPY(avail->ac_module, group, alltoall);
             COPY(avail->ac_module, group, alltoall_nb);
             COPY(avail->ac_module, group, broadcast_nb);
+            COPY(avail->ac_module, group, sync_nb);
             COPY(avail->ac_module, group, scan);
         }
         OBJ_RELEASE(avail->ac_module);

@@ -198,49 +198,19 @@ OSHMEM_DECLSPEC void shmemx_int64_prod_to_all(int64_t *target, const int64_t *so
  */
 OSHMEM_DECLSPEC void shmemx_alltoall_global_nb(void *dest, const void *source, size_t size, long *counter);
 
-#define SHMEM_REQ_INVALID   NULL
-
+/* Full definition of the request struct; shmem.h provides the forward
+ * declaration and shmem_req_h typedef.  Providers that create requests
+ * must include this header or shmemx.h (which already includes shmem.h). */
 struct shmem_req
 {
-    /* return the status of the request object. deallocate and set to
-     * SHMEM_REQ_INVALID if complete. negative on error, postive on progress */
+    /* return the status of the request. 0 = complete, 1 = in progress,
+     * negative = error.  ctx is the provider-owned context. */
     int (*test)(void *ctx);
-    /* block and wait for collective completion. deallocate and set to
-     * SHMEM_REQ_INVALID when complete. negative on error, postive on progress */
+    /* block until complete. 0 = success, negative = error. */
     int (*wait)(void *ctx);
-    /* object that contains all necessary resources for scoll component to
-     * complete the operation */
+    /* provider-owned context opaque to generic request code */
     void *ctx;
 };
-typedef struct shmem_req * shmem_req_h;
-
-static inline int shmem_req_test(shmem_req_h *request)
-{
-    int ret;
-    if (*request == SHMEM_REQ_INVALID) {
-        return -1;
-    }
-    ret = (*request)->test(*request);
-    if (ret == 0) {
-        free(*request);
-        request = SHMEM_REQ_INVALID;
-    }
-    return ret;
-}
-
-static inline int shmem_req_wait(shmem_req_h *request)
-{
-    int ret;
-    if (*request == SHMEM_REQ_INVALID) {
-        return -1;
-    }
-    ret = (*request)->wait((*request)->ctx);
-    if (ret == 0) {
-        free(*request);
-        *request = SHMEM_REQ_INVALID;
-    }
-    return ret;
-}
 
 int shmemx_alltoall32_nb(shmem_team_t team, void *dest, const void *source, size_t nelems, shmem_req_h *request);
 int shmemx_alltoall64_nb(shmem_team_t team, void *dest, const void *source, size_t nelems, shmem_req_h *request);

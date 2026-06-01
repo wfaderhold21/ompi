@@ -133,7 +133,7 @@ typedef int (*mca_scoll_base_module_broadcast_nb_fn_t)(struct oshmem_group_t *gr
                                                   long *pSync,
                                                   bool nlong_type,
                                                   int alg,
-                                                  int * request);
+                                                  shmem_req_h *request);
 typedef int (*mca_scoll_base_module_collect_fn_t)(struct oshmem_group_t *group,
                                                   void *target,
                                                   const void *source,
@@ -166,7 +166,11 @@ typedef int (*mca_scoll_base_module_alltoall_nb_fn_t)(struct oshmem_group_t *gro
                                                   size_t element_size,
                                                   long *pSync,
                                                   int alg,
-                                                  int * request);
+                                                  shmem_req_h *request);
+typedef int (*mca_scoll_base_module_sync_nb_fn_t)(struct oshmem_group_t *group,
+                                                  long *pSync,
+                                                  int alg,
+                                                  shmem_req_h *request);
 typedef int (*mca_scoll_base_module_scan_fn_t)(struct oshmem_group_t *group,
                                                struct oshmem_op_t *op,
                                                void *target,
@@ -189,6 +193,7 @@ struct mca_scoll_base_module_1_0_0_t {
     mca_scoll_base_module_alltoall_fn_t scoll_alltoall;
     mca_scoll_base_module_alltoall_nb_fn_t scoll_alltoall_nb;
     mca_scoll_base_module_broadcast_nb_fn_t scoll_broadcast_nb;
+    mca_scoll_base_module_sync_nb_fn_t scoll_sync_nb;
     mca_scoll_base_module_scan_fn_t scoll_scan;
 
     mca_scoll_base_module_enable_1_0_0_fn_t scoll_module_enable;
@@ -231,6 +236,8 @@ struct mca_scoll_base_group_scoll_t {
     mca_scoll_base_module_1_0_0_t *scoll_alltoall_nb_module;
     mca_scoll_base_module_broadcast_nb_fn_t scoll_broadcast_nb;
     mca_scoll_base_module_1_0_0_t *scoll_broadcast_nb_module;
+    mca_scoll_base_module_sync_nb_fn_t scoll_sync_nb;
+    mca_scoll_base_module_1_0_0_t *scoll_sync_nb_module;
     mca_scoll_base_module_scan_fn_t scoll_scan;
     mca_scoll_base_module_1_0_0_t *scoll_scan_module;
 

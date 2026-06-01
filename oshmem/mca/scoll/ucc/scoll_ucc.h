@@ -133,6 +133,11 @@ int mca_scoll_ucc_alltoall(struct oshmem_group_t *group,
                            long *pSync,
                            int alg);
 
+int mca_scoll_ucc_sync_nb(struct oshmem_group_t *group,
+                          long *pSync,
+                          int alg,
+                          shmem_req_h *request);
+
 int mca_scoll_ucc_broadcast_nb(struct oshmem_group_t *group,
                            int PE_root,
                            void *target,

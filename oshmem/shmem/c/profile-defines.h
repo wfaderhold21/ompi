@@ -2168,6 +2168,16 @@
 #define shmemx_int64_prod_to_all     pshmemx_int64_prod_to_all
 
 /*
+ * Nonblocking request routines
+ */
+#define shmem_req_test               pshmem_req_test
+#define shmem_req_wait               pshmem_req_wait
+
+/* Nonblocking team sync */
+#define shmem_sync_nb                pshmem_sync_nb
+#define shmem_team_sync_nb           pshmem_team_sync_nb
+
+/*
  * Alltoall routines
  */
 #define shmem_alltoall32             pshmem_alltoall32

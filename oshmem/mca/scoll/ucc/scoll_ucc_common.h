@@ -20,9 +20,9 @@
                                        _module->ucc_team)); \
 } while(0)
 
-static inline int scoll_ucc_nb_req_test(shmem_req_h req)
+static inline int scoll_ucc_nb_req_test(void *ctx)
 {
-    ucc_coll_req_h request = (ucc_coll_req_h) req->ctx;
+    ucc_coll_req_h request = (ucc_coll_req_h) ctx;
     ucc_status_t status;
 
     status = ucc_collective_test(request);

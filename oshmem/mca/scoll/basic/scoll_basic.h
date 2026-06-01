@@ -195,6 +195,10 @@ int mca_scoll_basic_broadcast_nb(struct oshmem_group_t *group,
                              bool nlong_type,
                              int alg,
                              shmem_req_h * request);
+int mca_scoll_basic_sync_nb(struct oshmem_group_t *group,
+                            long *pSync,
+                            int alg,
+                            shmem_req_h *request);
 
 
 
