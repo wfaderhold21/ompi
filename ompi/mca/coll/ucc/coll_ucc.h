@@ -17,8 +17,10 @@
 #include "ompi/mca/mca.h"
 #include "opal/memoryhooks/memory.h"
 #include "opal/mca/memory/base/base.h"
+#include "opal/class/opal_list.h"
 #include "ompi/mca/coll/coll.h"
 #include "ompi/communicator/communicator.h"
+#include "ompi/instance/instance.h"
 #include "ompi/attribute/attribute.h"
 #include "ompi/op/op.h"
 #include "coll_ucc_debug.h"
@@ -47,6 +49,22 @@ typedef struct mca_coll_ucc_req {
 } mca_coll_ucc_req_t;
 OBJ_CLASS_DECLARATION(mca_coll_ucc_req_t);
 
+/*
+ * Per-instance (per-session) UCC context. One is created for each
+ * distinct ompi_instance_t (MPI_Init creates one; each MPI_Session_init
+ * creates another). Communicators that share an instance share a context.
+ */
+struct mca_coll_ucc_ctx_t {
+    opal_list_item_t     super;
+    ucc_context_h        ucc_context;
+    int                  refcount;
+    ompi_instance_t     *instance;
+    ompi_communicator_t *oob_comm; /* comm used for OOB during context creation;
+                                    * ep IDs are ranks within this comm */
+};
+typedef struct mca_coll_ucc_ctx_t mca_coll_ucc_ctx_t;
+OBJ_CLASS_DECLARATION(mca_coll_ucc_ctx_t);
+
 struct mca_coll_ucc_component_t {
     mca_coll_base_component_3_0_0_t super;
     int                             ucc_priority;
@@ -57,13 +75,13 @@ struct mca_coll_ucc_component_t {
     char                           *cts;
     const char                     *compiletime_version;
     const char                     *runtime_version;
-    bool                            libucc_initialized;
+    bool                            lib_initialized;
     ucc_lib_h                       ucc_lib;
     ucc_lib_attr_t                  ucc_lib_attr;
     ucc_coll_type_t                 cts_requested;
     ucc_coll_type_t                 nb_cts_requested;
     ucc_coll_type_t                 ps_cts_requested;
-    ucc_context_h                   ucc_context;
+    opal_list_t                     contexts;
     opal_free_list_t                requests;
 };
 typedef struct mca_coll_ucc_component_t mca_coll_ucc_component_t;
@@ -78,6 +96,7 @@ struct mca_coll_ucc_module_t {
     ompi_communicator_t*                            comm;
     int                                             rank;
     ucc_team_h                                      ucc_team;
+    mca_coll_ucc_ctx_t                             *ucc_ctx;
     mca_coll_base_module_allreduce_fn_t             previous_allreduce;
     mca_coll_base_module_t*                         previous_allreduce_module;
     mca_coll_base_module_iallreduce_fn_t            previous_iallreduce;

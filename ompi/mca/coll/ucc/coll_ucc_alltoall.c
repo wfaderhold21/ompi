@@ -80,7 +80,7 @@ int mca_coll_ucc_alltoall(const void *sbuf, size_t scount, struct ompi_datatype_
                                                      rbuf, rcount, rdtype,
                                                      false, ucc_module, &req, NULL));
     COLL_UCC_POST_AND_CHECK(req);
-    COLL_UCC_CHECK(coll_ucc_req_wait(req));
+    COLL_UCC_CHECK(coll_ucc_req_wait(req, ((mca_coll_ucc_module_t*)module)->ucc_ctx->ucc_context));
     return OMPI_SUCCESS;
 fallback:
     UCC_VERBOSE(3, "running fallback alltoall");

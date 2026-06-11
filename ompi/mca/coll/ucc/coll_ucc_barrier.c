@@ -38,7 +38,7 @@ int mca_coll_ucc_barrier(struct ompi_communicator_t *comm,
     UCC_VERBOSE(3, "running ucc barrier");
     COLL_UCC_CHECK(mca_coll_ucc_barrier_init_common(false, ucc_module, &req, NULL));
     COLL_UCC_POST_AND_CHECK(req);
-    COLL_UCC_CHECK(coll_ucc_req_wait(req));
+    COLL_UCC_CHECK(coll_ucc_req_wait(req, ((mca_coll_ucc_module_t*)module)->ucc_ctx->ucc_context));
     return OMPI_SUCCESS;
 fallback:
     UCC_VERBOSE(3, "running fallback barrier");

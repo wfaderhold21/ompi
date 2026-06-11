@@ -248,7 +248,8 @@ static int mca_coll_ucc_open(void)
 {
     mca_coll_ucc_component_t *cm = &mca_coll_ucc_component;
     mca_coll_ucc_output          = opal_output_open(NULL);
-    cm->libucc_initialized       = false;
+    cm->lib_initialized          = false;
+    OBJ_CONSTRUCT(&cm->contexts, opal_list_t);
     opal_output_set_verbosity(mca_coll_ucc_output, cm->ucc_verbose);
     mca_coll_ucc_init_default_cts();
     return OMPI_SUCCESS;
@@ -256,5 +257,6 @@ static int mca_coll_ucc_open(void)
 
 static int mca_coll_ucc_close(void)
 {
+    OBJ_DESTRUCT(&mca_coll_ucc_component.contexts);
     return OMPI_SUCCESS;
 }

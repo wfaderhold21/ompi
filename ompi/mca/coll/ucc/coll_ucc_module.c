@@ -20,6 +20,7 @@
 #include "ompi/mca/pml/pml.h"
 
 static int ucc_comm_attr_keyval;
+static void mca_coll_ucc_context_unref(mca_coll_ucc_ctx_t *ctx);
 /*
  * Initial query function that is invoked during MPI_INIT, allowing
  * this module to indicate what level of thread support it provides.
@@ -125,13 +126,17 @@ static void mca_coll_ucc_module_construct(mca_coll_ucc_module_t *ucc_module)
 
 static int mca_coll_ucc_progress(void)
 {
-    ucc_context_progress(mca_coll_ucc_component.ucc_context);
+    mca_coll_ucc_ctx_t *ctx;
+    OPAL_LIST_FOREACH(ctx, &mca_coll_ucc_component.contexts, mca_coll_ucc_ctx_t) {
+        ucc_context_progress(ctx->ucc_context);
+    }
     return OPAL_SUCCESS;
 }
 
 static void mca_coll_ucc_module_destruct(mca_coll_ucc_module_t *ucc_module)
 {
-    if (ucc_module->comm == &ompi_mpi_comm_world.comm){
+    mca_coll_ucc_component_t *cm = &mca_coll_ucc_component;
+    if (!cm->lib_initialized) {
         if (OMPI_SUCCESS != ompi_attr_free_keyval(COMM_ATTR, &ucc_comm_attr_keyval, 0)) {
             UCC_ERROR("ucc ompi_attr_free_keyval failed");
         }
@@ -146,19 +151,14 @@ static int ucc_comm_attr_del_fn(MPI_Comm comm, int keyval, void *attr_val, void 
 {
     mca_coll_ucc_module_t *ucc_module = (mca_coll_ucc_module_t*) attr_val;
     ucc_status_t status;
-    while(UCC_INPROGRESS == (status = ucc_team_destroy(ucc_module->ucc_team))) {}
-    if (ucc_module->comm == &ompi_mpi_comm_world.comm) {
-        if (mca_coll_ucc_component.libucc_initialized) {
-            UCC_VERBOSE(1,"finalizing ucc library");
-            opal_progress_unregister(mca_coll_ucc_progress);
-            ucc_context_destroy(mca_coll_ucc_component.ucc_context);
-            ucc_finalize(mca_coll_ucc_component.ucc_lib);
-        }
+    while (UCC_INPROGRESS == (status = ucc_team_destroy(ucc_module->ucc_team))) {
+        opal_progress();
     }
     if (UCC_OK != status) {
         UCC_ERROR("UCC team destroy failed");
         return OMPI_ERROR;
     }
+    mca_coll_ucc_context_unref(ucc_module->ucc_ctx);
     return OMPI_SUCCESS;
 }
 
@@ -249,20 +249,16 @@ static ucc_status_t oob_allgather(void *sbuf, void *rbuf, size_t msglen,
 }
 
 
-static int mca_coll_ucc_init_ctx(ompi_communicator_t* comm)
+/* One-time initialization of the UCC library, keyval, and request pool.
+ * Called the first time any communicator triggers UCC setup. */
+static int mca_coll_ucc_init_lib(void)
 {
     mca_coll_ucc_component_t     *cm = &mca_coll_ucc_component;
-    char                          str_buf[256];
     ompi_attribute_fn_ptr_union_t del_fn;
     ompi_attribute_fn_ptr_union_t copy_fn;
     ucc_lib_config_h              lib_config;
-    ucc_context_config_h          ctx_config;
     ucc_thread_mode_t             tm_requested;
     ucc_lib_params_t              lib_params;
-    ucc_context_params_t          ctx_params;
-    unsigned                      ucc_api_major, ucc_api_minor, ucc_api_patch;
-
-    ucc_get_version(&ucc_api_major, &ucc_api_minor, &ucc_api_patch);
 
     tm_requested           = ompi_mpi_thread_multiple ? UCC_THREAD_MULTIPLE :
                                                         UCC_THREAD_SINGLE;
@@ -280,7 +276,6 @@ static int mca_coll_ucc_init_ctx(ompi_communicator_t* comm)
             return OMPI_ERROR;
         }
     }
-
     if (UCC_OK != ucc_init(&lib_params, lib_config, &cm->ucc_lib)) {
         UCC_ERROR("UCC lib init failed");
         ucc_lib_config_release(lib_config);
@@ -293,114 +288,214 @@ static int mca_coll_ucc_init_ctx(ompi_communicator_t* comm)
                             UCC_LIB_ATTR_FIELD_COLL_TYPES;
     if (UCC_OK != ucc_lib_get_attr(cm->ucc_lib, &cm->ucc_lib_attr)) {
         UCC_ERROR("UCC get lib attr failed");
-        goto cleanup_lib;
+        goto err_finalize;
     }
-
     if (cm->ucc_lib_attr.thread_mode < tm_requested) {
         UCC_ERROR("UCC library doesn't support MPI_THREAD_MULTIPLE");
-        goto cleanup_lib;
+        goto err_finalize;
     }
+
+    copy_fn.attr_communicator_copy_fn  = MPI_COMM_NULL_COPY_FN;
+    del_fn.attr_communicator_delete_fn = ucc_comm_attr_del_fn;
+    if (OMPI_SUCCESS != ompi_attr_create_keyval(COMM_ATTR, copy_fn, del_fn,
+                                                &ucc_comm_attr_keyval, NULL, 0, NULL)) {
+        UCC_ERROR("UCC comm keyval create failed");
+        goto err_finalize;
+    }
+
+    OBJ_CONSTRUCT(&cm->requests, opal_free_list_t);
+    opal_free_list_init(&cm->requests, sizeof(mca_coll_ucc_req_t),
+                        opal_cache_line_size, OBJ_CLASS(mca_coll_ucc_req_t),
+                        0, 0,
+                        8, -1, 8,
+                        NULL, 0, NULL, NULL, NULL);
+
+    opal_progress_register(mca_coll_ucc_progress);
+    cm->lib_initialized = true;
+    return OMPI_SUCCESS;
+
+err_finalize:
+    ucc_finalize(cm->ucc_lib);
+    cm->ucc_enable = 0;
+    return OMPI_ERROR;
+}
+
+/* Create a new UCC context for the given communicator's instance.
+ * The communicator is used only for the OOB exchange during context setup. */
+static mca_coll_ucc_ctx_t *mca_coll_ucc_create_ctx(ompi_communicator_t *comm)
+{
+    mca_coll_ucc_component_t *cm = &mca_coll_ucc_component;
+    mca_coll_ucc_ctx_t       *ctx;
+    ucc_context_config_h      ctx_config;
+    ucc_context_params_t      ctx_params;
+    char                      str_buf[256];
+    unsigned                  ucc_api_major, ucc_api_minor, ucc_api_patch;
+
+    ucc_get_version(&ucc_api_major, &ucc_api_minor, &ucc_api_patch);
+
     ctx_params.mask             = UCC_CONTEXT_PARAM_FIELD_OOB;
     ctx_params.oob.allgather    = oob_allgather;
     ctx_params.oob.req_test     = oob_allgather_test;
     ctx_params.oob.req_free     = oob_allgather_free;
-    ctx_params.oob.coll_info    = (void*)comm;
+    ctx_params.oob.coll_info    = (void *)comm;
     ctx_params.oob.n_oob_eps    = ompi_comm_size(comm);
     ctx_params.oob.oob_ep       = ompi_comm_rank(comm);
+
     if (UCC_OK != ucc_context_config_read(cm->ucc_lib, NULL, &ctx_config)) {
         UCC_ERROR("UCC context config read failed");
-        goto cleanup_lib;
+        return NULL;
     }
 
     snprintf(str_buf, sizeof(str_buf), "%u", ompi_proc_world_size());
     if (UCC_OK != ucc_context_config_modify(ctx_config, NULL, "ESTIMATED_NUM_EPS",
                                             str_buf)) {
         UCC_ERROR("UCC context config modify failed for estimated_num_eps");
-        goto cleanup_lib;
+        goto err_cfg;
     }
-
     snprintf(str_buf, sizeof(str_buf), "%u", opal_process_info.num_local_peers + 1);
     if (UCC_OK != ucc_context_config_modify(ctx_config, NULL, "ESTIMATED_NUM_PPN",
                                             str_buf)) {
-        UCC_ERROR("UCC context config modify failed for estimated_num_eps");
-        goto cleanup_lib;
+        UCC_ERROR("UCC context config modify failed for estimated_num_ppn");
+        goto err_cfg;
     }
-
     if (ucc_api_major > 1 || (ucc_api_major == 1 && ucc_api_minor >= 6)) {
         snprintf(str_buf, sizeof(str_buf), "%u", opal_process_info.my_local_rank);
         if (UCC_OK != ucc_context_config_modify(ctx_config, NULL, "NODE_LOCAL_ID",
                                                 str_buf)) {
             UCC_ERROR("UCC context config modify failed for node_local_id");
-            goto cleanup_lib;
+            goto err_cfg;
         }
     }
 
+    ctx = OBJ_NEW(mca_coll_ucc_ctx_t);
+    if (!ctx) {
+        goto err_cfg;
+    }
+
     if (UCC_OK != ucc_context_create(cm->ucc_lib, &ctx_params,
-                                     ctx_config, &cm->ucc_context)) {
+                                     ctx_config, &ctx->ucc_context)) {
         UCC_ERROR("UCC context create failed");
         ucc_context_config_release(ctx_config);
-        goto cleanup_lib;
+        OBJ_RELEASE(ctx);
+        return NULL;
     }
     ucc_context_config_release(ctx_config);
 
-    copy_fn.attr_communicator_copy_fn  = MPI_COMM_NULL_COPY_FN;
-    del_fn.attr_communicator_delete_fn = ucc_comm_attr_del_fn;
-    if (OMPI_SUCCESS != ompi_attr_create_keyval(COMM_ATTR, copy_fn, del_fn,
-                                                &ucc_comm_attr_keyval, NULL ,0, NULL)) {
-        UCC_ERROR("UCC comm keyval create failed");
-        goto cleanup_ctx;
+    ctx->instance = comm->instance;
+    ctx->oob_comm = comm;
+    ctx->refcount = 0;
+    opal_list_append(&cm->contexts, &ctx->super);
+    UCC_VERBOSE(1, "created ucc context for instance %p", (void *)ctx->instance);
+    return ctx;
+
+err_cfg:
+    ucc_context_config_release(ctx_config);
+    return NULL;
+}
+
+static void mca_coll_ucc_context_unref(mca_coll_ucc_ctx_t *ctx)
+{
+    mca_coll_ucc_component_t *cm = &mca_coll_ucc_component;
+    if (0 == --ctx->refcount) {
+        UCC_VERBOSE(1, "destroying ucc context for instance %p", (void *)ctx->instance);
+        ucc_context_destroy(ctx->ucc_context);
+        opal_list_remove_item(&cm->contexts, &ctx->super);
+        OBJ_RELEASE(ctx);
+        if (opal_list_is_empty(&cm->contexts)) {
+            opal_progress_unregister(mca_coll_ucc_progress);
+            ucc_finalize(cm->ucc_lib);
+            OBJ_DESTRUCT(&cm->requests);
+            cm->lib_initialized = false;
+        }
+    }
+}
+
+/* Find or create a UCC context for comm's instance, increment its refcount. */
+static mca_coll_ucc_ctx_t *mca_coll_ucc_context_ref(ompi_communicator_t *comm)
+{
+    mca_coll_ucc_component_t *cm = &mca_coll_ucc_component;
+    mca_coll_ucc_ctx_t       *ctx;
+
+    OPAL_LIST_FOREACH(ctx, &cm->contexts, mca_coll_ucc_ctx_t) {
+        if (ctx->instance == comm->instance) {
+            ctx->refcount++;
+            return ctx;
+        }
     }
 
-    OBJ_CONSTRUCT(&cm->requests, opal_free_list_t);
-    opal_free_list_init(&cm->requests, sizeof(mca_coll_ucc_req_t),
-                        opal_cache_line_size, OBJ_CLASS(mca_coll_ucc_req_t),
-                        0, 0,                     /* no payload data */
-                        8, -1, 8,                 /* num_to_alloc, max, per alloc */
-                        NULL, 0, NULL, NULL, NULL /* no Mpool or init function */);
+    /* No existing context for this instance — initialize lib on first use. */
+    if (!cm->lib_initialized) {
+        if (OMPI_SUCCESS != mca_coll_ucc_init_lib()) {
+            return NULL;
+        }
+    }
 
-    opal_progress_register(mca_coll_ucc_progress);
-    UCC_VERBOSE(1, "initialized ucc context");
-    cm->libucc_initialized = true;
-    return OMPI_SUCCESS;
-cleanup_ctx:
-    ucc_context_destroy(cm->ucc_context);
-
-cleanup_lib:
-    ucc_finalize(cm->ucc_lib);
-    cm->ucc_enable         = 0;
-    cm->libucc_initialized = false;
-    return OMPI_ERROR;
+    ctx = mca_coll_ucc_create_ctx(comm);
+    if (!ctx) {
+        return NULL;
+    }
+    ctx->refcount++;
+    return ctx;
 }
 
+/* Context for the ep_map callback: maps team-comm ranks to OOB-comm ranks. */
+typedef struct {
+    ompi_communicator_t *team_comm;
+    ompi_communicator_t *oob_comm;
+} mca_coll_ucc_rank_map_ctx_t;
+
+/*
+ * Return the context endpoint ID for team rank `ep`.
+ * Context ep IDs are ranks in the OOB communicator (set at context creation),
+ * so we look up which OOB comm rank corresponds to the process at team rank ep.
+ */
 static uint64_t rank_map_cb(uint64_t ep, void *cb_ctx)
 {
-    struct ompi_communicator_t *comm = cb_ctx;
+    mca_coll_ucc_rank_map_ctx_t *rmc  = (mca_coll_ucc_rank_map_ctx_t *)cb_ctx;
+    ompi_proc_t                 *proc = ompi_comm_peer_lookup(rmc->team_comm, (int)ep);
+    int                          i, oob_size = ompi_comm_size(rmc->oob_comm);
 
-    return ((ompi_process_name_t*)&ompi_comm_peer_lookup(comm, ep)->super.
-            proc_name)->vpid;
+    for (i = 0; i < oob_size; i++) {
+        if (ompi_comm_peer_lookup(rmc->oob_comm, i) == proc) {
+            return (uint64_t)i;
+        }
+    }
+    UCC_ERROR("rank_map_cb: rank %lu not found in OOB communicator", (unsigned long)ep);
+    return (uint64_t)-1;
 }
 
-static inline ucc_ep_map_t get_rank_map(struct ompi_communicator_t *comm)
+/*
+ * Build a UCC ep_map for `comm` relative to `oob_comm`.
+ * `rmc` must remain valid until ucc_team_create_test returns UCC_OK.
+ */
+static inline ucc_ep_map_t get_rank_map(ompi_communicator_t *comm,
+                                        ompi_communicator_t *oob_comm,
+                                        mca_coll_ucc_rank_map_ctx_t *rmc)
 {
     ucc_ep_map_t map;
-    int64_t      r1, r2, stride;
+    int64_t      start, r1, r2, stride;
     uint64_t     i;
     int          is_strided;
 
-    map.ep_num = ompi_comm_size(comm);
-    if (comm == &ompi_mpi_comm_world.comm) {
+    rmc->team_comm = comm;
+    rmc->oob_comm  = oob_comm;
+    map.ep_num     = ompi_comm_size(comm);
+
+    /* If this comm IS the OOB comm, ep IDs are simply 0..n-1. */
+    if (comm == oob_comm) {
         map.type = UCC_EP_MAP_FULL;
         return map;
     }
 
-    /* try to detect strided pattern */
+    /* Try to detect a strided pattern (common for sub-communicators). */
     is_strided = 1;
-    r1         = rank_map_cb(0, comm);
-    r2         = rank_map_cb(1, comm);
+    start      = rank_map_cb(0, rmc);
+    r1         = start;
+    r2         = rank_map_cb(1, rmc);
     stride     = r2 - r1;
     for (i = 2; i < map.ep_num; i++) {
         r1 = r2;
-        r2 = rank_map_cb(i, comm);
+        r2 = rank_map_cb(i, rmc);
         if (r2 - r1 != stride) {
             is_strided = 0;
             break;
@@ -409,12 +504,12 @@ static inline ucc_ep_map_t get_rank_map(struct ompi_communicator_t *comm)
 
     if (is_strided) {
         map.type           = UCC_EP_MAP_STRIDED;
-        map.strided.start  = r1;
+        map.strided.start  = start;
         map.strided.stride = stride;
     } else {
         map.type      = UCC_EP_MAP_CB;
         map.cb.cb     = rank_map_cb;
-        map.cb.cb_ctx = (void*)comm;
+        map.cb.cb_ctx = (void *)rmc;
     }
 
     return map;
@@ -475,21 +570,16 @@ static int mca_coll_ucc_replace_coll_handlers(mca_coll_ucc_module_t *ucc_module)
 static int mca_coll_ucc_module_enable(mca_coll_base_module_t *module,
                                       struct ompi_communicator_t *comm)
 {
-    mca_coll_ucc_component_t *cm         = &mca_coll_ucc_component;
-    mca_coll_ucc_module_t    *ucc_module = (mca_coll_ucc_module_t *)module;
-    ucc_status_t              status;
+    mca_coll_ucc_component_t    *cm         = &mca_coll_ucc_component;
+    mca_coll_ucc_module_t       *ucc_module = (mca_coll_ucc_module_t *)module;
+    mca_coll_ucc_rank_map_ctx_t  rmc;      /* valid for the duration of team create */
+    ucc_status_t                 status;
     int rc;
     ucc_team_params_t team_params = {
-        .mask   = UCC_TEAM_PARAM_FIELD_EP_MAP   |
-                  UCC_TEAM_PARAM_FIELD_EP       |
-                  UCC_TEAM_PARAM_FIELD_EP_RANGE,
-        .ep_map = {
-            .type      = (comm == &ompi_mpi_comm_world.comm) ?
-                          UCC_EP_MAP_FULL : UCC_EP_MAP_CB,
-            .ep_num    = ompi_comm_size(comm),
-            .cb.cb     = rank_map_cb,
-            .cb.cb_ctx = (void*)comm
-        },
+        .mask     = UCC_TEAM_PARAM_FIELD_EP_MAP |
+                    UCC_TEAM_PARAM_FIELD_EP      |
+                    UCC_TEAM_PARAM_FIELD_EP_RANGE,
+        .ep_map   = get_rank_map(comm, ucc_module->ucc_ctx->oob_comm, &rmc),
         .ep       = ompi_comm_rank(comm),
         .ep_range = UCC_COLLECTIVE_EP_RANGE_CONTIG
     };
@@ -504,7 +594,7 @@ static int mca_coll_ucc_module_enable(mca_coll_base_module_t *module,
                     (void*)comm, ompi_comm_size(comm));
     }
 
-    if (UCC_OK != ucc_team_create_post(&cm->ucc_context, 1,
+    if (UCC_OK != ucc_team_create_post(&ucc_module->ucc_ctx->ucc_context, 1,
                                        &team_params, &ucc_module->ucc_team)) {
         UCC_ERROR("ucc_team_create_post failed");
         goto err;
@@ -535,7 +625,7 @@ static int mca_coll_ucc_module_enable(mca_coll_base_module_t *module,
 err:
     ucc_module->ucc_team = NULL;
     cm->ucc_enable       = 0;
-    opal_progress_unregister(mca_coll_ucc_progress);
+    mca_coll_ucc_context_unref(ucc_module->ucc_ctx);
     return OMPI_ERROR;
 }
 
@@ -629,19 +719,20 @@ mca_coll_ucc_comm_query(struct ompi_communicator_t *comm, int *priority)
         return NULL;
     }
 
-    if (!cm->libucc_initialized) {
-        if (OMPI_SUCCESS != mca_coll_ucc_init_ctx(comm)) {
-            cm->ucc_enable = 0;
-            return NULL;
-        }
+    mca_coll_ucc_ctx_t *ctx = mca_coll_ucc_context_ref(comm);
+    if (!ctx) {
+        cm->ucc_enable = 0;
+        return NULL;
     }
 
     ucc_module = OBJ_NEW(mca_coll_ucc_module_t);
     if (!ucc_module) {
+        mca_coll_ucc_context_unref(ctx);
         cm->ucc_enable = 0;
         return NULL;
     }
-    ucc_module->comm                      = comm;
+    ucc_module->comm    = comm;
+    ucc_module->ucc_ctx = ctx;
     ucc_module->super.coll_module_enable  = mca_coll_ucc_module_enable;
     ucc_module->super.coll_module_disable = mca_coll_ucc_module_disable;
     *priority                             = cm->ucc_priority;
@@ -649,6 +740,8 @@ mca_coll_ucc_comm_query(struct ompi_communicator_t *comm, int *priority)
     return &ucc_module->super;
 }
 
+
+OBJ_CLASS_INSTANCE(mca_coll_ucc_ctx_t, opal_list_item_t, NULL, NULL);
 
 OBJ_CLASS_INSTANCE(mca_coll_ucc_module_t,
                    mca_coll_base_module_t,
