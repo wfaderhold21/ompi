@@ -208,6 +208,8 @@ struct shmem_req
     int (*test)(void *ctx);
     /* block until complete. 0 = success, negative = error. */
     int (*wait)(void *ctx);
+    /* release provider-owned state after a terminal test/wait result */
+    void (*release)(void *ctx);
     /* provider-owned context opaque to generic request code */
     void *ctx;
 };

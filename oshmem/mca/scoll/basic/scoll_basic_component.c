@@ -13,9 +13,12 @@
 
 #include "oshmem_config.h"
 
+#include <string.h>
+
 #include "oshmem/constants.h"
 #include "oshmem/mca/scoll/scoll.h"
 #include "oshmem/mca/scoll/base/base.h"
+#include "oshmem/mca/memheap/memheap.h"
 #include "scoll_basic.h"
 
 /*
@@ -157,10 +160,26 @@ static int basic_open(void)
 
 static int basic_close(void)
 {
-    return OSHMEM_SUCCESS;
+    return mca_scoll_basic_finalize();
+}
+
+static void basic_module_construct(mca_scoll_basic_module_t *module)
+{
+    module->pSync = NULL;
+    module->nr_colls = 0;
+    module->nr_current_colls = 0;
+    memset(module->pSync_bm, 0, sizeof(module->pSync_bm));
+}
+
+static void basic_module_destruct(mca_scoll_basic_module_t *module)
+{
+    if (NULL != module->pSync) {
+        MCA_MEMHEAP_CALL(private_free(module->pSync));
+        module->pSync = NULL;
+    }
 }
 
 OBJ_CLASS_INSTANCE(mca_scoll_basic_module_t,
                    mca_scoll_base_module_t,
-                   NULL,
-                   NULL);
+                   basic_module_construct,
+                   basic_module_destruct);

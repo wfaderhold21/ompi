@@ -80,6 +80,7 @@ int basic_broadcast_nb_start(struct oshmem_group_t *group,
                 rc = MCA_SPML_CALL(put_nb(oshmem_ctx_default, target, nelems, source, pe_cur, &handles[i]));
                 if (OSHMEM_SUCCESS != rc) {
                     free(handles);
+                    nb->handles = NULL;
                     nb_ctx->status = SHMEM_NB_COLL_ERROR;
                     return rc;
                 }
@@ -89,6 +90,7 @@ int basic_broadcast_nb_start(struct oshmem_group_t *group,
         rc = MCA_SPML_CALL(quiet(oshmem_ctx_default));
         if (OSHMEM_SUCCESS != rc) {
             free(handles);
+            nb->handles = NULL;
             nb_ctx->status = SHMEM_NB_COLL_ERROR;
             return rc;
         }
@@ -119,7 +121,11 @@ int mca_scoll_basic_broadcast_nb(struct oshmem_group_t *group,
     }
 
     if (!module->pSync) {
-        MCA_MEMHEAP_CALL(private_alloc(2 * SCOLL_BASIC_NUM_OUTSTANDING * sizeof(long), (void **)&module->pSync));
+        rc = MCA_MEMHEAP_CALL(private_alloc(2 * SCOLL_BASIC_NUM_OUTSTANDING *
+                                            sizeof(long), (void **)&module->pSync));
+        if (OSHMEM_SUCCESS != rc || NULL == module->pSync) {
+            return OSHMEM_ERR_OUT_OF_RESOURCE;
+        }
         for (int i = 0; i < (2 * SCOLL_BASIC_NUM_OUTSTANDING); i++) {
             module->pSync[i] = -1;
         }
@@ -159,10 +165,11 @@ int mca_scoll_basic_broadcast_nb(struct oshmem_group_t *group,
     }
     (*request)->test = scoll_basic_nb_req_test;
     (*request)->wait = scoll_basic_nb_req_wait;
+    (*request)->release = scoll_basic_nb_req_release;
     (*request)->ctx = ctx;
 
     /* Add the request to the pending requests list */
     enqueue_nb_coll(ctx);
 
     return OSHMEM_SUCCESS;
-} 
+}

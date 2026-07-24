@@ -231,7 +231,11 @@ int mca_scoll_basic_alltoall_nb(struct oshmem_group_t *group,
     }
 
     if (!module->pSync) {
-        MCA_MEMHEAP_CALL(private_alloc(2 * SCOLL_BASIC_NUM_OUTSTANDING * sizeof(long), (void **)&module->pSync));
+        rc = MCA_MEMHEAP_CALL(private_alloc(2 * SCOLL_BASIC_NUM_OUTSTANDING *
+                                            sizeof(long), (void **)&module->pSync));
+        if (OSHMEM_SUCCESS != rc || NULL == module->pSync) {
+            return OSHMEM_ERR_OUT_OF_RESOURCE;
+        }
         for (int i = 0; i < (2 * SCOLL_BASIC_NUM_OUTSTANDING); i++) {
             module->pSync[i] = -1;
         }
@@ -272,6 +276,7 @@ int mca_scoll_basic_alltoall_nb(struct oshmem_group_t *group,
     }
     (*request)->test = scoll_basic_nb_req_test;
     (*request)->wait = scoll_basic_nb_req_wait;
+    (*request)->release = scoll_basic_nb_req_release;
     (*request)->ctx = ctx;
 
     /* Add the request to the pending requests list */

@@ -550,36 +550,19 @@ static int _algorithm_basic(struct oshmem_group_t *group, long *pSync)
 
 static int _algorithm_adaptive(struct oshmem_group_t *group, long *pSync)
 {
-    int rc = OSHMEM_SUCCESS;
-    bool local_peers_only = true;
-
     SCOLL_VERBOSE(12, "[#%d] Barrier algorithm: Adaptive", group->my_pe);
 
-    /* check if we have only local peers */
-    {
-        int i = 0;
-        int my_id = oshmem_proc_group_find_id(group, group->my_pe);
-
-        for (i = 0; i < group->proc_count; i++) {
-            if (i == my_id)
-                continue;
-
-            if (!oshmem_proc_on_local_node(i)) {
-                local_peers_only = false;
-                break;
-            }
-        }
-    }
-
-    /* Select algorithm we use:
-     * use send/recv way for group in the same node and for np < 32
-     * otherwise use put/get way
+    /*
+     * The old small/local-team path selected _algorithm_basic(), which uses
+     * the MPI PML send/recv compatibility hooks.  Those hooks are optional for
+     * an SPML and can return OSHMEM_ERR_NOT_IMPLEMENTED (notably with UCX),
+     * causing shmem_team_sync() to fail for exactly the small sub-teams that
+     * this path selected.
+     *
+     * Recursive doubling uses the required one-sided SPML put/get/wait
+     * operations, handles non-power-of-two team sizes, and is already the
+     * large/non-local path.  Use it for every adaptive barrier so team sync
+     * does not depend on optional two-sided support.
      */
-    if (local_peers_only || (group->proc_count < 32)) {
-        rc = _algorithm_basic(group, pSync);
-    } else {
-        rc = _algorithm_recursive_doubling(group, pSync);
-    }
-
-    return rc;
+    return _algorithm_recursive_doubling(group, pSync);
 }

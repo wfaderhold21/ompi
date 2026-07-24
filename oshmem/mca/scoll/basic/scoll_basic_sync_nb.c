@@ -106,14 +106,6 @@ int mca_scoll_basic_sync_nb(struct oshmem_group_t *group, long *pSync, int alg,
 
     module = (mca_scoll_basic_module_t *) group->g_scoll.scoll_sync_nb_module;
 
-    if (!module->pSync) {
-        MCA_MEMHEAP_CALL(private_alloc(2 * SCOLL_BASIC_NUM_OUTSTANDING *
-                                       sizeof(long), (void **)&module->pSync));
-        for (int i = 0; i < 2 * SCOLL_BASIC_NUM_OUTSTANDING; i++) {
-            module->pSync[i] = _SHMEM_SYNC_VALUE;
-        }
-    }
-
     coll = calloc(1, sizeof(nb_coll_t));
     if (NULL == coll) {
         return OSHMEM_ERR_OUT_OF_RESOURCE;
@@ -123,6 +115,7 @@ int mca_scoll_basic_sync_nb(struct oshmem_group_t *group, long *pSync, int alg,
     coll->coll_id  = module->nr_colls++;
     coll->status   = SHMEM_NB_COLL_BLOCKED;
     coll->module   = module;
+    coll->pSync    = pSync;
 
     coll->args.group  = group;
     coll->args.target = NULL;
@@ -144,6 +137,7 @@ int mca_scoll_basic_sync_nb(struct oshmem_group_t *group, long *pSync, int alg,
     }
     (*request)->test = scoll_basic_sync_nb_test;
     (*request)->wait = scoll_basic_sync_nb_wait;
+    (*request)->release = scoll_basic_nb_req_release;
     (*request)->ctx  = ctx;
 
     enqueue_nb_coll(ctx);

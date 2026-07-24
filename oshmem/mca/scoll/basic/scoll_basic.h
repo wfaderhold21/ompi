@@ -16,6 +16,7 @@
 #include "oshmem/mca/mca.h"
 #include "oshmem/mca/scoll/scoll.h"
 #include "oshmem/util/oshmem_util.h"
+#include "opal_stdatomic.h"
 
 BEGIN_C_DECLS
 
@@ -44,6 +45,7 @@ extern int mca_scoll_basic_param_reduce_algorithm;
 /* API functions */
 
 int mca_scoll_basic_init(bool enable_progress_threads, bool enable_threads);
+int mca_scoll_basic_finalize(void);
 mca_scoll_base_module_t*
 mca_scoll_basic_query(struct oshmem_group_t *group, int *priority);
 
@@ -67,7 +69,7 @@ typedef int (*mca_scoll_basic_start_fn_t)(struct oshmem_group_t *group,
                                   size_t nelems,
                                   size_t element_size,
                                   long *pSync,
-                                  void **coll);
+                                  void *coll);
 
 typedef int (*mca_scoll_basic_progress_fn_t)(struct oshmem_group_t *group,
                                   void *target,
@@ -76,7 +78,7 @@ typedef int (*mca_scoll_basic_progress_fn_t)(struct oshmem_group_t *group,
                                   size_t nelems,
                                   size_t element_size,
                                   long *pSync,
-                                  void **coll);
+                                  void *coll);
 
 int scoll_basic_nb_req_test(void *ctx);
 int scoll_basic_nb_req_wait(void *ctx);
@@ -92,7 +94,7 @@ typedef enum {
 typedef struct nb_coll nb_coll_t;
 typedef struct {
     opal_object_t super;
-    scoll_basic_nb_coll_status status;  /* Current status of the non-blocking operation */
+    opal_atomic_int32_t status;         /* Current status of the non-blocking operation */
     nb_coll_t *nb_coll;                 /* Pointer to the non-blocking collective operation */
 } scoll_basic_nb_ctx_t;
 OBJ_CLASS_DECLARATION(scoll_basic_nb_ctx_t);
@@ -100,6 +102,7 @@ OBJ_CLASS_DECLARATION(scoll_basic_nb_ctx_t);
 typedef struct nb_coll {
     size_t                        coll_id;
     mca_scoll_basic_module_t     *module;
+    long                          *pSync;
     scoll_basic_nb_coll_status    status;
     mca_scoll_basic_start_fn_t    start;
     mca_scoll_basic_progress_fn_t progress;
@@ -126,7 +129,7 @@ typedef struct nb_coll {
 //OBJ_CLASS_DECLARATION(nb_coll_t);
 
 void enqueue_nb_coll(scoll_basic_nb_ctx_t *ctx);
-void dequeue_nb_coll(void);
+void scoll_basic_nb_req_release(void *ctx);
 
 enum {
     SHMEM_SYNC_INIT = _SHMEM_SYNC_VALUE,

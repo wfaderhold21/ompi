@@ -35,11 +35,10 @@ static inline int scoll_ucc_nb_req_test(void *ctx)
         opal_progress();
         return 1;
     }
-    ucc_collective_finalize(request);
     return 0;
 }
 
-static inline ucc_status_t scoll_ucc_req_wait(ucc_coll_req_h req)
+static inline ucc_status_t scoll_ucc_req_wait_no_finalize(ucc_coll_req_h req)
 {
     ucc_status_t status;
     while (UCC_OK != (status = ucc_collective_test(req))) {
@@ -51,7 +50,24 @@ static inline ucc_status_t scoll_ucc_req_wait(ucc_coll_req_h req)
         ucc_context_progress(mca_scoll_ucc_component.ucc_context);
         opal_progress();
     }
+    return status;
+}
+
+static inline ucc_status_t scoll_ucc_req_wait(ucc_coll_req_h req)
+{
+    ucc_status_t status = scoll_ucc_req_wait_no_finalize(req);
+
+    if (UCC_OK != status) {
+        return status;
+    }
     return ucc_collective_finalize(req);
+}
+
+static inline void scoll_ucc_nb_req_release(void *ctx)
+{
+    if (NULL != ctx) {
+        ucc_collective_finalize((ucc_coll_req_h)ctx);
+    }
 }
 
 int scoll_ucc_nb_req_wait(void *ctx);

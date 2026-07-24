@@ -81,6 +81,8 @@ struct mca_scoll_ucc_module_t {
     mca_scoll_base_module_t *previous_alltoall_nb_module;
     mca_scoll_base_module_broadcast_nb_fn_t previous_broadcast_nb;
     mca_scoll_base_module_t *previous_broadcast_nb_module;
+    mca_scoll_base_module_sync_nb_fn_t previous_sync_nb;
+    mca_scoll_base_module_t *previous_sync_nb_module;
 };
 typedef struct mca_scoll_ucc_module_t mca_scoll_ucc_module_t;
 

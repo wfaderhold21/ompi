@@ -30,17 +30,29 @@ int mca_scoll_ucc_init_query(bool enable_progress_threads, bool enable_ucc_threa
 
 static void mca_scoll_ucc_module_clear(mca_scoll_ucc_module_t *ucc_module)
 {
-    ucc_module->previous_barrier      = NULL;
-    ucc_module->previous_broadcast    = NULL;
-    ucc_module->previous_reduce       = NULL;
-    ucc_module->previous_collect      = NULL;
-    ucc_module->previous_alltoall     = NULL;
-    ucc_module->previous_alltoall_nb  = NULL;
-    ucc_module->previous_broadcast_nb  = NULL;
+    ucc_module->previous_barrier             = NULL;
+    ucc_module->previous_barrier_module      = NULL;
+    ucc_module->previous_broadcast           = NULL;
+    ucc_module->previous_broadcast_module    = NULL;
+    ucc_module->previous_reduce              = NULL;
+    ucc_module->previous_reduce_module       = NULL;
+    ucc_module->previous_collect             = NULL;
+    ucc_module->previous_collect_module      = NULL;
+    ucc_module->previous_alltoall            = NULL;
+    ucc_module->previous_alltoall_module     = NULL;
+    ucc_module->previous_alltoall_nb         = NULL;
+    ucc_module->previous_alltoall_nb_module  = NULL;
+    ucc_module->previous_broadcast_nb        = NULL;
+    ucc_module->previous_broadcast_nb_module = NULL;
+    ucc_module->previous_sync_nb             = NULL;
+    ucc_module->previous_sync_nb_module      = NULL;
 }
 
 static void mca_scoll_ucc_module_construct(mca_scoll_ucc_module_t *ucc_module)
 {
+    ucc_module->group = NULL;
+    ucc_module->ucc_team = NULL;
+    ucc_module->pSync = NULL;
     mca_scoll_ucc_module_clear(ucc_module);
 }
 
@@ -75,10 +87,13 @@ static void mca_scoll_ucc_module_destruct(mca_scoll_ucc_module_t *ucc_module)
     }         
 
     OBJ_RELEASE_IF_NOT_NULL(ucc_module->previous_alltoall_module);
+    OBJ_RELEASE_IF_NOT_NULL(ucc_module->previous_alltoall_nb_module);
     OBJ_RELEASE_IF_NOT_NULL(ucc_module->previous_collect_module);
     OBJ_RELEASE_IF_NOT_NULL(ucc_module->previous_reduce_module);
     OBJ_RELEASE_IF_NOT_NULL(ucc_module->previous_broadcast_module);
+    OBJ_RELEASE_IF_NOT_NULL(ucc_module->previous_broadcast_nb_module);
     OBJ_RELEASE_IF_NOT_NULL(ucc_module->previous_barrier_module);
+    OBJ_RELEASE_IF_NOT_NULL(ucc_module->previous_sync_nb_module);
 
     mca_scoll_ucc_module_clear(ucc_module);
 }
@@ -104,6 +119,7 @@ static int mca_scoll_ucc_save_coll_handlers(mca_scoll_base_module_t *module,
     UCC_SAVE_PREV_SCOLL_API(alltoall);
     UCC_SAVE_PREV_SCOLL_API(alltoall_nb);
     UCC_SAVE_PREV_SCOLL_API(broadcast_nb);
+    UCC_SAVE_PREV_SCOLL_API(sync_nb);
 
     return OSHMEM_SUCCESS;
 }
@@ -503,6 +519,3 @@ OBJ_CLASS_INSTANCE(mca_scoll_ucc_module_t,
         mca_scoll_base_module_t,
         mca_scoll_ucc_module_construct,
         mca_scoll_ucc_module_destruct);
-
-
-

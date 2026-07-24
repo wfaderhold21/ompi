@@ -108,7 +108,7 @@ int scoll_ucc_nb_req_wait(void *ctx)
     ucc_coll_req_h request = (ucc_coll_req_h) ctx;
     ucc_status_t status;
 
-    status = scoll_ucc_req_wait(request);
+    status = scoll_ucc_req_wait_no_finalize(request);
     if (UCC_OK != status) {
         return -1;
     }
@@ -137,6 +137,7 @@ int mca_scoll_ucc_alltoall_nb(struct oshmem_group_t *group,
     /* FIXME: incorrect semantics here */
     /* Do nothing on zero-length request */
     if (OPAL_UNLIKELY(!nelems)) {
+        *request = SHMEM_REQ_INVALID;
         return OSHMEM_SUCCESS;
     }
 
@@ -144,8 +145,13 @@ int mca_scoll_ucc_alltoall_nb(struct oshmem_group_t *group,
     SCOLL_UCC_CHECK(mca_scoll_ucc_alltoall_init(source, target, count, element_size, ucc_module, &req));
     SCOLL_UCC_CHECK(ucc_collective_post(req));
     *request = malloc(sizeof(struct shmem_req));
+    if (NULL == *request) {
+        ucc_collective_finalize(req);
+        return OSHMEM_ERR_OUT_OF_RESOURCE;
+    }
     (*request)->test = scoll_ucc_nb_req_test;
     (*request)->wait = scoll_ucc_nb_req_wait;
+    (*request)->release = scoll_ucc_nb_req_release;
     (*request)->ctx = (void *) req; 
     return OSHMEM_SUCCESS;
 fallback:

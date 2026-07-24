@@ -106,6 +106,16 @@ static int _shmem_finalize(void)
         return ret;
     }
 
+    /*
+     * Team sync/work buffers are symmetric allocations.  Release them while
+     * the collective, SPML, and memheap frameworks are still alive.  In
+     * particular, shmem_free() must not run after the memheap framework has
+     * been closed or the allocation can no longer be recognized as symmetric.
+     */
+    if (OSHMEM_SUCCESS != (ret = oshmem_team_finalize())) {
+        return ret;
+    }
+
     oshmem_proc_group_finalize_scoll();
 
     /* Close down MCA modules */
@@ -147,11 +157,6 @@ static int _shmem_finalize(void)
         return ret;
     }
 
-    /* free team resources (before groups since teams depend on groups) */
-    if (OSHMEM_SUCCESS != (ret = oshmem_team_finalize())) {
-        return ret;
-    }
-
     /* free proc_group resources */
     if (OSHMEM_SUCCESS != (ret = oshmem_proc_group_finalize())) {
         return ret;
@@ -169,4 +174,3 @@ static int _shmem_finalize(void)
 
     return ret;
 }
-

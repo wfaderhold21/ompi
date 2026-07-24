@@ -34,7 +34,10 @@ int shmem_req_test(shmem_req_h *request)
     }
 
     ret = (*request)->test((*request)->ctx);
-    if (ret == 0) {
+    if (ret <= 0) {
+        if (NULL != (*request)->release) {
+            (*request)->release((*request)->ctx);
+        }
         free(*request);
         *request = SHMEM_REQ_INVALID;
     }
@@ -52,7 +55,10 @@ int shmem_req_wait(shmem_req_h *request)
     }
 
     ret = (*request)->wait((*request)->ctx);
-    if (ret == 0) {
+    if (ret <= 0) {
+        if (NULL != (*request)->release) {
+            (*request)->release((*request)->ctx);
+        }
         free(*request);
         *request = SHMEM_REQ_INVALID;
     }

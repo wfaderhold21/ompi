@@ -286,6 +286,8 @@ int oshmem_team_alloc_predefined_sync_buffers(void)
 
 int oshmem_team_finalize(void)
 {
+    oshmem_group_t *shared_group = NULL;
+
     /* Free sync buffers for predefined teams */
     if (oshmem_team_shared != NULL) {
         oshmem_team_free_sync_buffers(oshmem_team_shared);
@@ -294,13 +296,21 @@ int oshmem_team_finalize(void)
         oshmem_team_free_sync_buffers(oshmem_team_world);
     }
 
-    /* Clean up TEAM_SHARED's group (TEAM_WORLD uses oshmem_group_all) */
+    /*
+     * TEAM_SHARED is built by oshmem_group_create_from_list(), so it is not
+     * registered in oshmem_group_array and proc_group_finalize() will not
+     * release it for us.
+     */
     if (oshmem_team_shared != NULL &&
         oshmem_team_shared->group != NULL &&
         oshmem_team_shared->group != oshmem_group_all) {
-        /* Note: group destruction is handled by proc_group_finalize */
+        shared_group = oshmem_team_shared->group;
+        oshmem_team_shared->group = NULL;
+        oshmem_group_free(shared_group);
     }
 
+    _oshmem_team_world.group = NULL;
+    _oshmem_team_shared.group = NULL;
     oshmem_team_world = NULL;
     oshmem_team_shared = NULL;
 

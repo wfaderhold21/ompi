@@ -115,6 +115,7 @@ int mca_scoll_ucc_broadcast_nb(struct oshmem_group_t *group,
 
     /* Do nothing on zero-length request */
     if (OPAL_UNLIKELY(!nlong)) {
+        *request = SHMEM_REQ_INVALID;
         return OSHMEM_SUCCESS;
     }
 
@@ -122,8 +123,13 @@ int mca_scoll_ucc_broadcast_nb(struct oshmem_group_t *group,
     SCOLL_UCC_CHECK(mca_scoll_ucc_broadcast_init(buf, nlong, PE_root, ucc_module, &req));
     SCOLL_UCC_CHECK(ucc_collective_post(req));
     *request = malloc(sizeof(struct shmem_req));
+    if (NULL == *request) {
+        ucc_collective_finalize(req);
+        return OSHMEM_ERR_OUT_OF_RESOURCE;
+    }
     (*request)->test = scoll_ucc_nb_req_test;
     (*request)->wait = scoll_ucc_nb_req_wait;
+    (*request)->release = scoll_ucc_nb_req_release;
     (*request)->ctx = (void *) req; 
     return OSHMEM_SUCCESS;
 fallback:

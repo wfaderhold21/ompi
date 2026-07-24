@@ -80,10 +80,12 @@ int mca_scoll_ucc_sync_nb(struct oshmem_group_t *group, long *pSync, int alg,
     }
     (*request)->test = scoll_ucc_nb_req_test;
     (*request)->wait = scoll_ucc_nb_req_wait;
+    (*request)->release = scoll_ucc_nb_req_release;
     (*request)->ctx  = (void *) req;
     return OSHMEM_SUCCESS;
 fallback:
     UCC_VERBOSE(3, "running fallback sync_nb");
-    rc = OSHMEM_ERR_NOT_IMPLEMENTED;
+    PREVIOUS_SCOLL_FN(ucc_module, sync_nb, group,
+                      pSync, alg, request);
     return rc;
 }

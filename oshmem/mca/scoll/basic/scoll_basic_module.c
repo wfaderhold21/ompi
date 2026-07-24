@@ -8,20 +8,28 @@
  * $HEADER$
  */
 
+#include <sched.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "oshmem_config.h"
 
 #include "oshmem/constants.h"
 #include "oshmem/mca/scoll/scoll.h"
 #include "oshmem/mca/scoll/base/base.h"
+#include "oshmem/runtime/runtime.h"
 #include "scoll_basic.h"
 
 pthread_mutex_t queue_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t progress_cond = PTHREAD_COND_INITIALIZER;
 static opal_list_t pending_requests;
+static pthread_t progress_thread_id;
+static bool progress_thread_started;
+static bool progress_thread_stop;
+static bool pending_requests_constructed;
 
-void * progress_thread(void *args);
+static void *progress_thread(void *args);
+static void progress_nb_ctx(scoll_basic_nb_ctx_t *ctx);
 
 /* Custom list item type for pending requests */
 typedef struct {
@@ -45,7 +53,9 @@ static void scoll_basic_nb_ctx_construct(scoll_basic_nb_ctx_t *ctx)
 static void scoll_basic_nb_ctx_destruct(scoll_basic_nb_ctx_t *ctx)
 {
     if (ctx->nb_coll) {
-        OBJ_RELEASE(ctx->nb_coll);
+        free(ctx->nb_coll->handles);
+        free(ctx->nb_coll);
+        ctx->nb_coll = NULL;
     }
 }
 
@@ -57,18 +67,67 @@ OBJ_CLASS_INSTANCE(scoll_basic_nb_ctx_t, opal_object_t, scoll_basic_nb_ctx_const
  */
 int mca_scoll_basic_init(bool enable_progress_threads, bool enable_threads)
 {
+    (void)enable_progress_threads;
+    (void)enable_threads;
+
     OBJ_CONSTRUCT(&pending_requests, opal_list_t);
- 
-    if (1 || enable_progress_threads) {
-        pthread_t thread;
-        int ret = pthread_create(&thread, NULL, progress_thread, NULL);
+    pending_requests_constructed = true;
+    progress_thread_stop = false;
+
+    /*
+     * A background collective invokes SPML/UCX concurrently with the
+     * application.  That is only legal when the user requested
+     * SHMEM_THREAD_MULTIPLE.  At lower thread levels enqueue_nb_coll()
+     * executes the operation synchronously, preserving correctness while
+     * still returning a valid, already-completed request.
+     */
+    if (oshmem_mpi_thread_provided == SHMEM_THREAD_MULTIPLE) {
+        int ret = pthread_create(&progress_thread_id, NULL, progress_thread, NULL);
         if (ret != 0) {
             SCOLL_ERROR("Failed to create progress thread");
+            OBJ_DESTRUCT(&pending_requests);
+            pending_requests_constructed = false;
             return OSHMEM_ERROR;
         }
-        /* Detach the thread since we don't need to join it */
-        pthread_detach(thread);
+        progress_thread_started = true;
     }
+    return OSHMEM_SUCCESS;
+}
+
+int mca_scoll_basic_finalize(void)
+{
+    pending_request_item_t *item;
+
+    if (!pending_requests_constructed) {
+        return OSHMEM_SUCCESS;
+    }
+
+    if (progress_thread_started) {
+        pthread_mutex_lock(&queue_lock);
+        progress_thread_stop = true;
+        pthread_cond_broadcast(&progress_cond);
+        pthread_mutex_unlock(&queue_lock);
+
+        pthread_join(progress_thread_id, NULL);
+        progress_thread_started = false;
+    }
+
+    /*
+     * The worker drains queued operations before exiting.  Keep this cleanup
+     * defensive for initialization failures or an incomplete caller.
+     */
+    while (NULL !=
+           (item = (pending_request_item_t *)opal_list_remove_first(&pending_requests))) {
+        if (NULL != item->ctx) {
+            item->ctx->status = SHMEM_NB_COLL_ERROR;
+            OBJ_RELEASE(item->ctx);
+        }
+        OBJ_RELEASE(item);
+    }
+
+    OBJ_DESTRUCT(&pending_requests);
+    pending_requests_constructed = false;
+    progress_thread_stop = false;
     return OSHMEM_SUCCESS;
 }
 
@@ -80,7 +139,8 @@ int mca_scoll_basic_init(bool enable_progress_threads, bool enable_threads)
 static int mca_scoll_basic_enable(mca_scoll_base_module_t *module,
                                   struct oshmem_group_t *comm)
 {
-    mca_scoll_basic_module_t    *basic_module = (mca_scoll_basic_module_t *) module;
+    (void)module;
+    (void)comm;
     /*nothing to do here*/
     return OSHMEM_SUCCESS;
 }
@@ -88,16 +148,17 @@ static int mca_scoll_basic_enable(mca_scoll_base_module_t *module,
 int scoll_basic_nb_req_test(void *ctx)
 {
     scoll_basic_nb_ctx_t *nb_ctx = (scoll_basic_nb_ctx_t *)ctx;
-    nb_coll_t *nb;
+    int status;
 
     if (nb_ctx == NULL) {
         return -1;  /* invalid request */
     }
 
-    if (nb_ctx->status == SHMEM_NB_COLL_COMPLETE) {
+    status = nb_ctx->status;
+    if (status == SHMEM_NB_COLL_COMPLETE) {
         return 0;  /* it's complete */
     }
-    if (nb_ctx->status == SHMEM_NB_COLL_ERROR) {
+    if (status == SHMEM_NB_COLL_ERROR) {
         return -1;  /* error */
     }
 
@@ -108,23 +169,25 @@ int scoll_basic_nb_req_test(void *ctx)
 int scoll_basic_nb_req_wait(void *ctx)
 {
     scoll_basic_nb_ctx_t *nb_ctx = (scoll_basic_nb_ctx_t *)ctx;
+    int status;
     
     if (nb_ctx == NULL) {
         return -1;  /* invalid request */
     }
 
-    if (nb_ctx->status == SHMEM_NB_COLL_COMPLETE) {
-        return 0;  /* it's complete */
-    }
-    if (nb_ctx->status == SHMEM_NB_COLL_ERROR) {
-        return -1;  /* error */
-    }
-    
-    while (nb_ctx->status != SHMEM_NB_COLL_COMPLETE && nb_ctx->status != SHMEM_NB_COLL_ERROR) {
+    while (SHMEM_NB_COLL_COMPLETE != (status = nb_ctx->status) &&
+           SHMEM_NB_COLL_ERROR != status) {
         sched_yield();
-        //opal_progress();
     }
-    return nb_ctx->status;
+    return (status == SHMEM_NB_COLL_COMPLETE) ? 0 : -1;
+}
+
+void scoll_basic_nb_req_release(void *ctx)
+{
+    if (NULL != ctx) {
+        scoll_basic_nb_ctx_t *nb_ctx = (scoll_basic_nb_ctx_t *)ctx;
+        OBJ_RELEASE(nb_ctx);
+    }
 }
 
 mca_scoll_base_module_t *
@@ -159,83 +222,118 @@ mca_scoll_basic_query(struct oshmem_group_t *group, int *priority)
 
 void enqueue_nb_coll(scoll_basic_nb_ctx_t *ctx)
 {
-    pending_request_item_t *list_item = OBJ_NEW(pending_request_item_t);
+    pending_request_item_t *list_item;
+
+    if (!progress_thread_started) {
+        progress_nb_ctx(ctx);
+        return;
+    }
+
+    list_item = OBJ_NEW(pending_request_item_t);
+    if (NULL == list_item) {
+        ctx->status = SHMEM_NB_COLL_ERROR;
+        return;
+    }
+
+    /* The queue owns a reference until the worker removes the item. */
+    OBJ_RETAIN(ctx);
     list_item->ctx = ctx;
- 
+
     pthread_mutex_lock(&queue_lock);
     opal_list_append(&pending_requests, &list_item->super);
     pthread_cond_signal(&progress_cond);
     pthread_mutex_unlock(&queue_lock);
 }
 
-void dequeue_nb_coll(void)
+static void progress_nb_ctx(scoll_basic_nb_ctx_t *ctx)
 {
-    pending_request_item_t *item = (pending_request_item_t *)opal_list_remove_first(&pending_requests);
-    if (item) {
-        OBJ_RELEASE(item);
-    }
-}
-
-void * progress_thread(void *args)
-{
-    const int concurrent = SCOLL_BASIC_NUM_OUTSTANDING / 2;
-    int ret;
-    pending_request_item_t *item;
-    scoll_basic_nb_ctx_t *ctx;
     nb_coll_t *nb;
+    long *pSync;
+    int ret;
 
-    while (1) {
-        pthread_mutex_lock(&queue_lock);
-        while (opal_list_is_empty(&pending_requests)) {
-            pthread_cond_wait(&progress_cond, &queue_lock);
+    if (NULL == ctx || NULL == (nb = ctx->nb_coll)) {
+        if (NULL != ctx) {
+            ctx->status = SHMEM_NB_COLL_ERROR;
         }
+        return;
+    }
 
-        item = (pending_request_item_t *)opal_list_get_first(&pending_requests);
-        ctx = item->ctx;
-        if (ctx == NULL) {
-            SCOLL_VERBOSE(14, "queue is malformed");
-            abort();
-        }
- 
-        nb = ctx->nb_coll;
-        if (nb == NULL) {
-            SCOLL_VERBOSE(14, "queue is malformed");
-            abort();
-        }
- 
-        if (ctx->status == SHMEM_NB_COLL_BLOCKED) {
-            ctx->status = SHMEM_NB_COLL_RUNNING;
+    /*
+     * Team sync owns a symmetric buffer whose address is already valid for
+     * every PE in that team.  Other nonblocking BASIC collectives continue to
+     * use the module's private slot array.
+     */
+    if (NULL != nb->pSync) {
+        pSync = nb->pSync;
+    } else if (NULL != nb->module && NULL != nb->module->pSync) {
+        pSync = &nb->module->pSync[nb->coll_id % SCOLL_BASIC_NUM_OUTSTANDING];
+    } else {
+        ctx->status = SHMEM_NB_COLL_ERROR;
+        return;
+    }
 
-            ret = nb->start(nb->args.group,
-                          nb->args.target,
-                          nb->args.source,
-                          nb->args.alltoall.dst,
-                          nb->args.alltoall.sst,
-                          nb->args.nlong,
-                          nb->args.alltoall.element_size,
-                          &nb->module->pSync[nb->coll_id % SCOLL_BASIC_NUM_OUTSTANDING],
-                          ctx);
-            if (ret < 0) {
-                ctx->status = SHMEM_NB_COLL_ERROR;
-            }
-        } else {
-            if (ctx->status == SHMEM_NB_COLL_COMPLETE ||
-                ctx->status == SHMEM_NB_COLL_ERROR) {
-                dequeue_nb_coll();
-            } else {
-                nb->progress(nb->args.group,
+    ctx->status = SHMEM_NB_COLL_RUNNING;
+    ret = nb->start(nb->args.group,
+                    nb->args.target,
+                    nb->args.source,
+                    nb->args.alltoall.dst,
+                    nb->args.alltoall.sst,
+                    nb->args.nlong,
+                    nb->args.alltoall.element_size,
+                    pSync,
+                    ctx);
+    if (ret < 0) {
+        ctx->status = SHMEM_NB_COLL_ERROR;
+        return;
+    }
+
+    while (ctx->status == SHMEM_NB_COLL_RUNNING) {
+        ret = nb->progress(nb->args.group,
                            nb->args.target,
                            nb->args.source,
                            nb->args.alltoall.dst,
                            nb->args.alltoall.sst,
                            nb->args.nlong,
                            nb->args.alltoall.element_size,
-                           &nb->module->pSync[nb->coll_id % SCOLL_BASIC_NUM_OUTSTANDING],
+                           pSync,
                            ctx);
-            }
+        if (ret < 0) {
+            ctx->status = SHMEM_NB_COLL_ERROR;
+            return;
         }
+    }
+}
+
+static void *progress_thread(void *args)
+{
+    pending_request_item_t *item;
+    scoll_basic_nb_ctx_t *ctx;
+
+    (void)args;
+
+    while (true) {
+        pthread_mutex_lock(&queue_lock);
+        while (opal_list_is_empty(&pending_requests) && !progress_thread_stop) {
+            pthread_cond_wait(&progress_cond, &queue_lock);
+        }
+
+        if (progress_thread_stop && opal_list_is_empty(&pending_requests)) {
+            pthread_mutex_unlock(&queue_lock);
+            break;
+        }
+
+        item = (pending_request_item_t *)opal_list_remove_first(&pending_requests);
+        ctx = item->ctx;
         pthread_mutex_unlock(&queue_lock);
+
+        if (NULL == ctx) {
+            SCOLL_ERROR("Pending request has no context");
+        } else {
+            progress_nb_ctx(ctx);
+            OBJ_RELEASE(ctx);
+        }
+        OBJ_RELEASE(item);
     }
 
-    pthread_exit(NULL);
+    return NULL;
 }

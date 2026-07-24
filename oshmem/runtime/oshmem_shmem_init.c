@@ -261,7 +261,15 @@ static int _shmem_init(int argc, char **argv, int requested, int *provided)
     char *error = NULL;
 
     oshmem_mpi_thread_requested = requested;
-    oshmem_mpi_thread_provided = requested;
+    /*
+     * ompi_mpi_init() has already populated *provided.  Do not advertise the
+     * requested level when the runtime supplied less: the basic nonblocking
+     * backend uses this value to decide whether concurrent transport progress
+     * is legal.
+     */
+    oshmem_mpi_thread_provided = (NULL != provided) ? *provided : requested;
+    oshmem_mpi_thread_multiple =
+        (oshmem_mpi_thread_provided == SHMEM_THREAD_MULTIPLE);
 
     OPAL_TIMING_ENV_INIT(timing);
 
@@ -423,9 +431,6 @@ static int _shmem_init(int argc, char **argv, int requested, int *provided)
     OPAL_TIMING_ENV_NEXT(timing, "mca_scoll_enable()");
 
     (*provided) = oshmem_mpi_thread_provided;
-
-    oshmem_mpi_thread_multiple = (oshmem_mpi_thread_provided == SHMEM_THREAD_MULTIPLE) ? true : false;
-
 
     error: if (ret != OSHMEM_SUCCESS) {
         const char *err_msg = opal_strerror(ret);
