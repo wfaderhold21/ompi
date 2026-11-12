@@ -63,6 +63,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/mman.h>
 
 #include "opal/runtime/opal_progress.h"
 #include "ompi/mca/pml/pml.h"
@@ -129,13 +130,14 @@ static inline uint32_t gpi_full_mask(void)
 
 static inline int gpi_seg_of(const void *addr, uint64_t *off_out)
 {
-    uintptr_t a = (uintptr_t) addr;
+    const char *a = (const char *) addr;
     uint32_t s;
 
-    for (s = 0; s < memheap_map->n_segments; s++) {
-        memheap_seg_t *seg = &memheap_map->mem_segs[s];
-        if (a >= seg->super.va_base && a < seg->super.va_end) {
-            *off_out = a - seg->super.va_base;
+    for (s = 0; s < (uint32_t) memheap_map->n_segments; s++) {
+        map_segment_t *seg = &memheap_map->mem_segs[s];
+        if (a >= (const char *) seg->super.va_base
+            && a < (const char *) seg->super.va_end) {
+            *off_out = (uint64_t) (a - (const char *) seg->super.va_base);
             return (int) s;
         }
     }
@@ -378,13 +380,13 @@ sshmem_mkey_t *mca_spml_gpi_register(void *addr, size_t size, uint64_t shmid,
 
     *count = 0;
 
-    if (memheap_map->n_segments > GPI_SPML_MAX_SEGS) {
+    if ((uint32_t) memheap_map->n_segments > GPI_SPML_MAX_SEGS) {
         SPML_GPI_ERROR("%u memheap segments exceed bind capacity %u",
                        memheap_map->n_segments, GPI_SPML_MAX_SEGS);
         return NULL;
     }
     seg = gpi_seg_of(addr, &off);
-    if (seg < 0 || (uintptr_t) addr != memheap_map->mem_segs[seg].super.va_base) {
+    if (seg < 0 || addr != memheap_map->mem_segs[seg].super.va_base) {
         SPML_GPI_ERROR("register: %p is not a segment base", addr);
         return NULL;
     }
@@ -500,7 +502,7 @@ void mca_spml_gpi_rmkey_unpack(shmem_ctx_t ctx, sshmem_mkey_t *mkey,
         (uint32_t) w->n_procs != g_nprocs ||
         w->segno != segno ||
         0 == w->n_segs || w->n_segs > GPI_SPML_MAX_SEGS ||
-        w->n_segs != memheap_map->n_segments) {
+        w->n_segs != (uint32_t) memheap_map->n_segments) {
         SPML_GPI_ERROR("unpack pe %d seg %u: wire gate failed "
                        "(my_pe %d nprocs %u nsegs %u/%u)",
                        remote_pe, segno, w->my_pe, (unsigned) w->n_procs,
