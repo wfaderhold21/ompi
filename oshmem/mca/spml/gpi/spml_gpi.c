@@ -75,6 +75,7 @@
 #include "oshmem/mca/spml/spml.h"
 #include "oshmem/runtime/params.h"
 #include "oshmem/runtime/runtime.h"
+#include "oshmem/proc/proc.h"
 
 #include "spml_gpi.h"
 #include "spml_gpi_component.h"
@@ -119,13 +120,55 @@ static int            g_hook_registered;
  * ctx (ucx precedent: oshmem_ctx_default = &mca_spml_ucx_ctx_default). */
 static uint64_t gpi_ctx_default_storage[4];
 
+/* The OOB map global `memheap_map` (memheap_base_mkey.c:81) is assigned only in
+ * memheap_oob_init(), i.e. AFTER the module-init pass that calls our register()
+ * and rmkey_unpack() -- it is NULL at that point (2-rank Linux smoke, 2026-11-17).
+ * The map that is live during mca_memheap_base_select() is this extern, which is
+ * also what mca_memheap_base_reg() is handed and what the base.h helpers walk
+ * (ucx gets the same info via memheap_find_segnum()). */
+#define GPI_MEMHEAP_MAP  (&mca_memheap_base_map)
+
 /* ------------------------------------------------------------------ *
  * helpers
  * ------------------------------------------------------------------ */
 
+/* Page source MUST match libgpi's adopt_page() (src/gpi_shm.c:277) — the two
+ * sides have to agree on what "page-multiple" means or adopt() rejects us. */
+static long gpi_page(void)
+{
+    long p = sysconf(_SC_PAGESIZE);
+    return p > 0 ? p : 4096;
+}
+
+/* What register() actually adopted per segment, in publication order. The
+ * published range is the page-rounded superset (ruling: Ferrol 2026-11-17), so
+ * it is what bind bases and descriptor offsets are relative to — NOT
+ * seg->super.va_base. `live` guards both the page-sharing check and gpi_seg_of. */
+typedef struct {
+    void         *lo;
+    size_t        span;
+    int           live;
+} gpi_adopt_span_t;
+
+static gpi_adopt_span_t g_adopt_span[GPI_SPML_MAX_SEGS];
+
+/* Exact segment-base lookup (deliberately NOT gpi_seg_of: that matches the
+ * published superset, which would accept a non-base address). */
+static inline int gpi_seg_index_of(const void *addr)
+{
+    uint32_t s;
+
+    for (s = 0; s < (uint32_t) GPI_MEMHEAP_MAP->n_segments; s++) {
+        if (GPI_MEMHEAP_MAP->mem_segs[s].super.va_base == addr) {
+            return (int) s;
+        }
+    }
+    return -1;
+}
+
 static inline uint32_t gpi_full_mask(void)
 {
-    return (1u << memheap_map->n_segments) - 1u;
+    return (1u << GPI_MEMHEAP_MAP->n_segments) - 1u;
 }
 
 static inline int gpi_seg_of(const void *addr, uint64_t *off_out)
@@ -133,11 +176,20 @@ static inline int gpi_seg_of(const void *addr, uint64_t *off_out)
     const char *a = (const char *) addr;
     uint32_t s;
 
-    for (s = 0; s < (uint32_t) memheap_map->n_segments; s++) {
-        map_segment_t *seg = &memheap_map->mem_segs[s];
-        if (a >= (const char *) seg->super.va_base
-            && a < (const char *) seg->super.va_end) {
-            *off_out = (uint64_t) (a - (const char *) seg->super.va_base);
+    for (s = 0; s < (uint32_t) GPI_MEMHEAP_MAP->n_segments; s++) {
+        map_segment_t *seg = &GPI_MEMHEAP_MAP->mem_segs[s];
+        /* Offsets are relative to what was PUBLISHED, which for a non-page-
+         * aligned segment is the page-rounded superset (see gpi_adopt_span_t).
+         * A segment not yet adopted falls back to its raw range. */
+        const char *lo = g_adopt_span[s].live
+                             ? (const char *) g_adopt_span[s].lo
+                             : (const char *) seg->super.va_base;
+        size_t span = g_adopt_span[s].live
+                          ? g_adopt_span[s].span
+                          : (size_t) ((char *) seg->super.va_end
+                                       - (char *) seg->super.va_base);
+        if (a >= lo && a < lo + span) {
+            *off_out = (uint64_t) (a - lo);
             return (int) s;
         }
     }
@@ -167,7 +219,8 @@ static int gpi_spml_progress(void)
     uint32_t full;
     unsigned q;
 
-    if (NULL == g_pe || NULL == memheap_map) {
+    if (NULL == g_pe || 0 == GPI_MEMHEAP_MAP->n_segments) {
+        /* not wired up yet (register/xchng pending) */
         return 0;
     }
     full = gpi_full_mask();
@@ -287,7 +340,12 @@ int mca_spml_gpi_add_procs(struct oshmem_group_t *group, size_t nprocs)
         return OSHMEM_SUCCESS; /* group re-selection (S1: same WORLD set) */
     }
     g_nprocs = (unsigned) nprocs;
-    g_my_pe  = (unsigned) shmem_my_pe();
+    /* MUST NOT use the public shmem_my_pe() here: add_procs runs inside
+     * oshmem_shmem_init(), before oshmem_shmem_initialized is set, so the
+     * RUNTIME_CHECK_INIT() in shmem_query.c aborts the job (found by the
+     * 2-rank Linux smoke, 2026-11-17). The internal accessor is the
+     * init-safe equivalent and is what the runtime itself uses. */
+    g_my_pe  = (unsigned) oshmem_my_proc_id();
 
     g_pe = (gpi_pe_t *) calloc(nprocs, sizeof(*g_pe));
     if (NULL == g_pe) {
@@ -377,16 +435,18 @@ sshmem_mkey_t *mca_spml_gpi_register(void *addr, size_t size, uint64_t shmid,
     uint64_t off;
     unsigned q, r;
     int seg;
+    void  *lo   = NULL;   /* published (page-rounded) base */
+    size_t span = 0;      /* published (page-rounded) span */
 
     *count = 0;
 
-    if ((uint32_t) memheap_map->n_segments > GPI_SPML_MAX_SEGS) {
+    if ((uint32_t) GPI_MEMHEAP_MAP->n_segments > GPI_SPML_MAX_SEGS) {
         SPML_GPI_ERROR("%u memheap segments exceed bind capacity %u",
-                       memheap_map->n_segments, GPI_SPML_MAX_SEGS);
+                       GPI_MEMHEAP_MAP->n_segments, GPI_SPML_MAX_SEGS);
         return NULL;
     }
-    seg = gpi_seg_of(addr, &off);
-    if (seg < 0 || addr != memheap_map->mem_segs[seg].super.va_base) {
+    seg = gpi_seg_index_of(addr);
+    if (seg < 0) {
         SPML_GPI_ERROR("register: %p is not a segment base", addr);
         return NULL;
     }
@@ -395,15 +455,58 @@ sshmem_mkey_t *mca_spml_gpi_register(void *addr, size_t size, uint64_t shmid,
         return NULL;
     }
 
+    /* Adopt the page-rounded superset (ruling: Ferrol 2026-11-17). The static/
+     * global symmetric area (seg >= 1, from /proc/self/maps) is not page-sized,
+     * and libgpi rightly refuses a partial-page claim; claiming the whole
+     * page(s) is the accepted answer, so those pages become GPI-owned.
+     * adopt() is content-preserving (stash/restore), so the bytes survive. */
+    {
+        long   pg    = gpi_page();
+        uint64_t ab  = (uint64_t) (uintptr_t) addr;
+        uint64_t lo64 = ab & ~((uint64_t) pg - 1);
+        uint64_t span64 = (ab - lo64) + (uint64_t) size;
+        span64 = (span64 + (uint64_t) pg - 1) & ~((uint64_t) pg - 1);
+        lo        = (void *) (uintptr_t) lo64;
+        span      = (size_t) span64;
+        off       = ab - lo64;    /* the segment's skew inside its published page */
+        (void) off;               /* informational: offsets come from gpi_seg_of */
+
+        /* Guard the ruling requires: two segments must not share a page, or a
+         * later MAP_FIXED would eat the earlier one's adopted bytes. */
+        for (r = 0; r < (unsigned) GPI_MEMHEAP_MAP->n_segments; r++) {
+            if (!g_adopt_span[r].live || (int) r == seg) {
+                continue;
+            }
+            if ((char *) lo < (char *) g_adopt_span[r].lo + g_adopt_span[r].span
+                && (char *) g_adopt_span[r].lo < (char *) lo + span) {
+                SPML_GPI_ERROR("register: seg %d page-range [%p,+%zu) overlaps "
+                               "seg %d [%p,+%zu); refusing to adopt (would "
+                               "clobber the neighbour)",
+                               seg, lo, span, r, g_adopt_span[r].lo,
+                               g_adopt_span[r].span);
+                return NULL;
+            }
+        }
+
+        if (span > (size_t) UINT32_MAX) {
+            SPML_GPI_ERROR("register: seg %d published span %zu overflows",
+                           seg, span);
+            return NULL;
+        }
+    }
+
     snprintf(g_adopt_obj[g_adopt_count], GPI_SHM_MAX_NAME,
              "/gpi-h%up%us%d", g_my_pe, (int) getpid(), seg);
 
-    if (0 != gpi_shm_bind_adopt(g_domain, addr, size,
+    if (0 != gpi_shm_bind_adopt(g_domain, lo, span,
                                 g_adopt_obj[g_adopt_count], &published)) {
-        SPML_GPI_ERROR("gpi_shm_bind_adopt seg %d (%p, %zu) failed",
-                       seg, addr, size);
+        SPML_GPI_ERROR("gpi_shm_bind_adopt seg %d (%p, %zu -> published %p, "
+                       "%zu) failed", seg, addr, size, lo, span);
         return NULL;
     }
+    g_adopt_span[seg].lo   = lo;
+    g_adopt_span[seg].span = span;
+    g_adopt_span[seg].live = 1;
     g_adopt_count++;
 
     w = (gpi_spml_wire_t *) calloc(1, sizeof(*w));
@@ -415,7 +518,7 @@ sshmem_mkey_t *mca_spml_gpi_register(void *addr, size_t size, uint64_t shmid,
     w->my_pe   = (int32_t) g_my_pe;
     w->n_procs = (int32_t) g_nprocs;
     w->segno   = (uint32_t) seg;
-    w->n_segs  = memheap_map->n_segments;
+    w->n_segs  = GPI_MEMHEAP_MAP->n_segments;
     w->seg_len = size;
     w->seg.published = published;
     memcpy(w->seg.obj, g_adopt_obj[g_adopt_count - 1], GPI_SHM_MAX_NAME);
@@ -428,12 +531,14 @@ sshmem_mkey_t *mca_spml_gpi_register(void *addr, size_t size, uint64_t shmid,
      * On in[me] also partition A (producer == owner): self bootstrap. */
     for (q = 0; q < g_nprocs; q++) {
         gpi_pe_t *p = &g_pe[q];
+        /* Publish the ADOPTED range, not the raw segment: descriptor offsets
+         * are relative to this base (see gpi_seg_of). */
         p->in.binds[GPI_SPML_MAX_SEGS + seg].base_addr =
-            (uint64_t) (uintptr_t) addr;
-        p->in.binds[GPI_SPML_MAX_SEGS + seg].length = size;
+            (uint64_t) (uintptr_t) lo;
+        p->in.binds[GPI_SPML_MAX_SEGS + seg].length = span;
         if (q == g_my_pe) {
-            p->in.binds[seg].base_addr = (uint64_t) (uintptr_t) addr;
-            p->in.binds[seg].length    = size;
+            p->in.binds[seg].base_addr = (uint64_t) (uintptr_t) lo;
+            p->in.binds[seg].length    = span;
             p->a_mask |= (1u << seg);
         }
     }
@@ -502,11 +607,11 @@ void mca_spml_gpi_rmkey_unpack(shmem_ctx_t ctx, sshmem_mkey_t *mkey,
         (uint32_t) w->n_procs != g_nprocs ||
         w->segno != segno ||
         0 == w->n_segs || w->n_segs > GPI_SPML_MAX_SEGS ||
-        w->n_segs != (uint32_t) memheap_map->n_segments) {
+        w->n_segs != (uint32_t) GPI_MEMHEAP_MAP->n_segments) {
         SPML_GPI_ERROR("unpack pe %d seg %u: wire gate failed "
                        "(my_pe %d nprocs %u nsegs %u/%u)",
                        remote_pe, segno, w->my_pe, (unsigned) w->n_procs,
-                       (unsigned) w->n_segs, memheap_map->n_segments);
+                       (unsigned) w->n_segs, GPI_MEMHEAP_MAP->n_segments);
         return;
     }
     q = &g_pe[remote_pe];
@@ -590,6 +695,46 @@ void *mca_spml_gpi_rmkey_ptr(const void *dst_addr, sshmem_mkey_t *mkey, int pe)
  * correctly with srcseg == dstseg.
  * ------------------------------------------------------------------ */
 
+/* Drive memheap's lazy mkey exchange for one peer.
+ *
+ * In this oshmem baseline rmkey_unpack() has exactly ONE caller:
+ * memheap_oob_get_mkeys() (memheap_base_mkey.c:623), reached only from
+ * mca_memheap_base_get_cached_mkey_slow() (base.h:289) on a per-peer
+ * mkeys_cache miss. Ask memheap for nothing and partition-A binds stay
+ * un-stamped and out[peer] unimported, so every remote op to that peer is
+ * unwireable (and, before this fix, silently so). spml/ucx gets it for free by
+ * asking for a cached mkey on every op.
+ *
+ * `remote_va` must lie inside the peer segment we are about to touch; the
+ * symmetric heap is identity-mapped, so the local scan finds it.
+ * Idempotent: once out[peer] is imported, the exchange already ran.
+ */
+static int gpi_ensure_peer_wired(shmem_ctx_t ctx, int peer, void *remote_va)
+{
+    gpi_pe_t *q;
+    void     *rva = NULL;
+
+    if (peer == (int) g_my_pe) {
+        return OSHMEM_SUCCESS;   /* register() stamped in[me] both partitions */
+    }
+    q = &g_pe[peer];
+    if (q->out_imported) {
+        return OSHMEM_SUCCESS;
+    }
+    if (NULL == mca_memheap_base_get_cached_mkey(ctx, peer, remote_va, 0,
+                                                 &rva)) {
+        SPML_GPI_ERROR("peer %d: memheap mkey exchange failed (va %p)",
+                       peer, remote_va);
+        return OSHMEM_ERR_NOT_AVAILABLE;
+    }
+    if (!q->out_imported) {
+        SPML_GPI_ERROR("peer %d: exchange ran but out[%d] not imported "
+                       "(rmkey_unpack incomplete)", peer, peer);
+        return OSHMEM_ERR_NOT_AVAILABLE;
+    }
+    return OSHMEM_SUCCESS;
+}
+
 static inline gpi_producer_t *gpi_tx_producer(gpi_pe_t *q, int peer)
 {
     return (peer == (int) g_my_pe) ? &q->self_prod : &q->prod;
@@ -640,6 +785,9 @@ int mca_spml_gpi_put_nb(shmem_ctx_t ctx, void *dst_addr, size_t size,
         return OSHMEM_ERR_BAD_PARAM;
     }
     q = &g_pe[dst];
+    if (OSHMEM_SUCCESS != gpi_ensure_peer_wired(ctx, dst, dst_addr)) {
+        return OSHMEM_ERR_NOT_AVAILABLE;
+    }
     if (!gpi_tx_ready(q, dst)) {
         SPML_GPI_ERROR("put to pe %d before the channel is open", dst);
         return OSHMEM_ERR_NOT_AVAILABLE;
@@ -653,8 +801,8 @@ int mca_spml_gpi_put_nb(shmem_ctx_t ctx, void *dst_addr, size_t size,
     return OSHMEM_SUCCESS;
 }
 
-int mca_spml_gpi_get_nb(shmem_ctx_t ctx, void *dst_addr, size_t size,
-                        void *src_addr, int src, void **handle)
+int mca_spml_gpi_get_nb(shmem_ctx_t ctx, void *src_addr, size_t size,
+                        void *dst_addr, int src, void **handle)
 {
     gpi_pe_t *q;
     gpi_desc_t d;
@@ -674,11 +822,14 @@ int mca_spml_gpi_get_nb(shmem_ctx_t ctx, void *dst_addr, size_t size,
     dstseg = gpi_seg_of(dst_addr, &dst_off);
     srcseg = gpi_seg_of(src_addr, &src_off);
     if (srcseg < 0 || dstseg < 0) {
-        SPML_GPI_ERROR("get: %p or %p outside the symmetric heap",
-                       dst_addr, src_addr);
+        SPML_GPI_ERROR("get: src %p or dst %p outside the symmetric heap",
+                       src_addr, dst_addr);
         return OSHMEM_ERR_BAD_PARAM;
     }
     q = &g_pe[src];
+    if (OSHMEM_SUCCESS != gpi_ensure_peer_wired(ctx, src, src_addr)) {
+        return OSHMEM_ERR_NOT_AVAILABLE;
+    }
     if (!gpi_tx_ready(q, src)) {
         return OSHMEM_ERR_NOT_AVAILABLE;
     }
@@ -704,10 +855,13 @@ int mca_spml_gpi_put(shmem_ctx_t ctx, void *dst_addr, size_t size,
     return mca_spml_gpi_quiet(ctx);
 }
 
-int mca_spml_gpi_get(shmem_ctx_t ctx, void *dst_addr, size_t size,
-                     void *src_addr, int src)
+int mca_spml_gpi_get(shmem_ctx_t ctx, void *src_addr, size_t size,
+                     void *dst_addr, int src)
 {
-    int rc = mca_spml_gpi_get_nb(ctx, dst_addr, size, src_addr, src, NULL);
+    /* NOTE the order: the framework's get is (ctx, SOURCE, size, DEST, pe) -- the
+     * order our parameters now name. Forwarding positionally in the old
+     * (DEST, size, SOURCE) shape silently un-does the operand fix. */
+    int rc = mca_spml_gpi_get_nb(ctx, src_addr, size, dst_addr, src, NULL);
     if (OSHMEM_SUCCESS != rc) {
         return rc;
     }

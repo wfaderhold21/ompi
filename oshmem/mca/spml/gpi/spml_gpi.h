@@ -174,10 +174,10 @@ int mca_spml_gpi_put_signal(shmem_ctx_t ctx, void *dst_addr, size_t size,
 int mca_spml_gpi_put_signal_nb(shmem_ctx_t ctx, void *dst_addr, size_t size,
                                void *src_addr, uint64_t *sig_addr,
                                uint64_t signal, int sig_op, int dst_pe);
-int mca_spml_gpi_get(shmem_ctx_t ctx, void *dst_addr, size_t size,
-                     void *src_addr, int src_pe);
-int mca_spml_gpi_get_nb(shmem_ctx_t ctx, void *dst_addr, size_t size,
-                        void *src_addr, int src_pe, void **handle);
+int mca_spml_gpi_get(shmem_ctx_t ctx, void *src_addr, size_t size,
+                     void *dst_addr, int src_pe);
+int mca_spml_gpi_get_nb(shmem_ctx_t ctx, void *src_addr, size_t size,
+                        void *dst_addr, int src_pe, void **handle);
 
 int mca_spml_gpi_recv(void *buf, size_t count, int src_pe);
 int mca_spml_gpi_send(void *buf, size_t count, int dst_pe,
